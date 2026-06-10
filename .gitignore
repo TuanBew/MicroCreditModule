@@ -1,0 +1,32 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+coverage/
+.vite/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Docker/local
+postgres_data/
+*.log
+
+# Claude/superpowers local visual companion
+.superpowers/
