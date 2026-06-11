@@ -7,6 +7,8 @@ from app.core.errors import ApiError, api_error_handler, validation_error_handle
 from app.routers.auth import router as auth_router
 from app.routers.features import router as features_router
 from app.routers.packages import router as packages_router
+from app.routers.purchases import router as purchases_router
+from app.routers.wallet import router as wallet_router
 
 
 def create_app() -> FastAPI:
@@ -31,6 +33,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/v1/auth")
     app.include_router(features_router, prefix="/api/v1/features")
     app.include_router(packages_router, prefix="/api/v1/packages")
+    app.include_router(purchases_router, prefix="/api/v1/purchases")
+    app.include_router(wallet_router, prefix="/api/v1/wallet")
 
     return app
 
