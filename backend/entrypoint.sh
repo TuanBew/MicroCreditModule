@@ -13,6 +13,10 @@ echo "PostgreSQL is up."
 echo "Running alembic upgrade head..."
 alembic upgrade head
 
+# Seed demo data
+echo "Seeding demo data..."
+python -m app.db.seed
+
 # Start the application
 echo "Starting uvicorn..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000
