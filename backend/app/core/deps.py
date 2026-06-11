@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import api_error
 from app.core.security import decode_access_token
 from app.db.session import get_db
-from app.models import User
+from app.models import Feature, User, UserEntitlement
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -44,3 +45,21 @@ def require_buyer(current_user: Annotated[User, Depends(get_current_user)]) -> U
     if current_user.role != "user":
         raise api_error(403, "FORBIDDEN", "User role is required.")
     return current_user
+
+
+def require_feature(feature_key: str) -> Callable[..., tuple[Feature, User]]:
+    """Returns a FastAPI dependency that validates entitlement for feature_key."""
+
+    def _dep(
+        db: Annotated[Session, Depends(get_db)],
+        user: Annotated[User, Depends(require_buyer)],
+    ) -> tuple[Feature, User]:
+        feature = db.get(Feature, feature_key)
+        if feature is None:
+            raise api_error(404, "FEATURE_NOT_FOUND", f"Feature '{feature_key}' does not exist.")
+        entitlement = db.get(UserEntitlement, {"user_id": user.id, "feature_key": feature_key})
+        if entitlement is None:
+            raise api_error(403, "FEATURE_LOCKED", "Feature is not unlocked for this account.")
+        return feature, user
+
+    return _dep

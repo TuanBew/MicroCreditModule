@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.errors import ApiError, api_error_handler, validation_error_handler
 from app.routers.auth import router as auth_router
+from app.routers.feature_runs import router as feature_runs_router
 from app.routers.features import router as features_router
 from app.routers.packages import router as packages_router
 from app.routers.purchases import router as purchases_router
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router, prefix="/api/v1/auth")
     app.include_router(features_router, prefix="/api/v1/features")
+    app.include_router(feature_runs_router, prefix="/api/v1/features")
     app.include_router(packages_router, prefix="/api/v1/packages")
     app.include_router(purchases_router, prefix="/api/v1/purchases")
     app.include_router(wallet_router, prefix="/api/v1/wallet")
