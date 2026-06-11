@@ -211,9 +211,9 @@ export function Store() {
                     <h3>Purchase complete.</h3>
                     <p>{purchaseSuccess}</p>
                     <p>
-                      <Link to="/playground">Go to Playground</Link>
+                      <Link to="/playground" onClick={closeModal}>Go to Playground</Link>
                       {' · '}
-                      <Link to="/dashboard">View Wallet</Link>
+                      <Link to="/dashboard" onClick={closeModal}>View Wallet</Link>
                     </p>
                     {newBalance !== null && (
                       <p className="muted">Balance updated to {credits(newBalance)} credits.</p>
