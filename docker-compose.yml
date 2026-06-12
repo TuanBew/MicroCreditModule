@@ -27,7 +27,9 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@creditos.app}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-credits123}
       SEED_USER_EMAIL: ${SEED_USER_EMAIL:-buyer@acme.io}
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-credits123}
     depends_on:
       db:
         condition: service_healthy

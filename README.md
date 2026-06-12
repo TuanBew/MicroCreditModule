@@ -163,7 +163,7 @@ Base path: `/api/v1`
 | GET    | `/wallet/purchases`  | Purchase history                |
 | GET    | `/wallet/ledger`     | Full credit ledger              |
 
-### Health
+### Health (root path — not under `/api/v1`)
 
 | Method | Path       | Description   |
 |--------|------------|---------------|
