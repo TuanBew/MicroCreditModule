@@ -4,8 +4,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-# npm install instead of npm ci: lock file may have Windows-native binaries from local dev
-RUN npm install --prefer-offline 2>/dev/null || npm install
+RUN npm ci
 
 COPY . .
 RUN npm run build
