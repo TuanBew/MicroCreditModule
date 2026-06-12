@@ -217,18 +217,32 @@ npm install
 npx vitest run
 ```
 
-### End-to-End (Playwright)
+### End-to-End (Playwright) — two packages
 
-The e2e tests live in `frontend/e2e/` and require the full stack to be running:
+**`frontend/e2e/`** — 15 tests targeting the Vite dev server (`http://localhost:5173`):
 
 ```bash
-docker compose up --build -d
+# Start the backend and dev server first, then:
 cd frontend
 npx playwright install --with-deps
 npx playwright test
 ```
 
-Test files: `auth.spec.ts`, `dashboard.spec.ts`, `store.spec.ts`, `playground.spec.ts`, `admin.spec.ts`
+Files: `auth.spec.ts`, `dashboard.spec.ts`, `store.spec.ts`, `playground.spec.ts`, `admin.spec.ts`
+
+**`e2e/`** — 11 tests targeting the Docker Compose stack (`http://localhost:3000`):
+
+```bash
+docker compose up --build -d
+cd e2e
+npm install
+npx playwright install --with-deps chromium
+npm test
+```
+
+Files: `tests/auth-routing.spec.ts`, `tests/store-wallet-playground.spec.ts`, `tests/admin-packages.spec.ts`
+
+Override the target URL with `E2E_BASE_URL=http://your-host npm test`.
 
 ---
 
