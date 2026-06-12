@@ -1,201 +1,212 @@
 # CreditOS
 
-A full-stack portfolio prototype demonstrating a **credit-based feature-gating system**. Users buy credit packages, spend credits to run gated features, and view their transaction history through a wallet dashboard. Admins manage the package catalog. No real payments, no real OAuth -- all simulated.
+A full-stack portfolio prototype of a **credit-based feature-gating system** — the kind of monetisation primitive behind products like Runway, Replicate, or the OpenAI API. Users purchase credit packages, spend credits to run gated AI-style features, and track every transaction through a live wallet. Admins manage the package catalog through a dedicated UI.
 
-**Tech stack:** FastAPI (Python 3.12) + React 18 / Vite / TypeScript + PostgreSQL 16 + Docker Compose
+No real payments. No real OAuth. Everything runs offline with a single `docker compose up`.
+
+---
+
+## Tech Stack
+
+| Layer       | Technology                                                   |
+|-------------|--------------------------------------------------------------|
+| Frontend    | React 18, TypeScript, Vite, React Router 6, Axios            |
+| Backend     | FastAPI (Python 3.12), SQLAlchemy 2 (async), Alembic         |
+| Database    | PostgreSQL 16                                                |
+| Auth        | JWT (HS256) — email + password only, no third-party OAuth    |
+| Serving     | Nginx reverse-proxy in front of the React SPA                |
+| Dev/deploy  | Docker Compose                                               |
+| Testing     | pytest · Vitest + React Testing Library · Playwright         |
 
 ---
 
 ## Architecture
 
 ```
-                        +-----------+
-                        |  Browser  |
-                        +-----+-----+
-                              |
-                        :3000 (HTTP)
-                              |
-                     +--------v--------+
-                     |  Nginx (frontend)|
-                     |  Static SPA      |
-                     +---+----------+---+
-                         |          |
-                   /     |          | /api/*
-              (React SPA)|          |
-                         |   +------v------+
-                         |   | FastAPI     |
-                         |   | (backend)   |
-                         |   | :8000       |
-                         |   +------+------+
-                         |          |
-                         |   +------v------+
-                         |   | PostgreSQL  |
-                         |   | (db) :5432  |
-                         |   +-------------+
-                         |
-                   index.html
+                          Browser
+                             |
+                      :3000 (HTTP)
+                             |
+                    ┌────────▼────────┐
+                    │  Nginx          │
+                    │  (frontend)     │
+                    └──┬──────────┬──┘
+                       │          │
+              /        │          │  /api/*
+         (React SPA)   │          │
+                       │   ┌──────▼──────┐
+                       │   │  FastAPI    │
+                       │   │  :8000      │
+                       │   └──────┬──────┘
+                       │          │
+                       │   ┌──────▼──────┐
+                       │   │  PostgreSQL │
+                       │   │  :5432      │
+                       │   └─────────────┘
 ```
 
-All three services run inside a single Docker Compose network (`creditos`). The frontend Nginx container is the only one with a published port (3000). API requests are reverse-proxied from `/api/` to the backend on port 8000.
+All three services share a Docker Compose network (`creditos`). Only Nginx publishes a port (3000). API requests from the browser are reverse-proxied at the Nginx layer from `/api/` → `http://backend:8000/api/` — no CORS headers needed in Docker mode.
 
 ---
 
-## Prerequisites
+## Features
 
-| Tool             | Version | Notes                           |
-|------------------|---------|---------------------------------|
-| Docker Desktop   | 24+     | Required for `docker compose`   |
-| Node.js          | 20+     | Only for local frontend dev     |
-| Python           | 3.12+   | Only for local backend dev      |
+### Buyer flow
 
-For the Docker-only workflow you only need Docker Desktop.
+| Page               | What it does                                                                             |
+|--------------------|------------------------------------------------------------------------------------------|
+| **Login / Signup** | Email + password auth; JWT stored in `localStorage`                                      |
+| **Store**          | Browse and purchase credit packages; idempotency-keyed so double-clicks are safe         |
+| **Dashboard**      | Live credit balance, unlocked features, purchase history, full credit ledger             |
+| **Playground**     | Run any of the four gated mock features; credits deducted per run; HTTP 402 when empty   |
 
----
+### Admin flow
 
-## Environment Setup
-
-1. Copy the example env file:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Edit `.env` and set values. The defaults work for local development:
-
-   ```dotenv
-   POSTGRES_USER=creditos
-   POSTGRES_PASSWORD=change-me-in-production
-   POSTGRES_DB=creditos
-   JWT_SECRET=change-me-in-production-use-secrets-token-hex-32
-   CORS_ORIGINS=http://localhost:3000
-   ```
-
-   To generate a strong JWT secret:
-
-   ```bash
-   python -c "import secrets; print(secrets.token_hex(32))"
-   ```
+| Page               | What it does                                                                             |
+|--------------------|------------------------------------------------------------------------------------------|
+| **Admin → Packages** | Create, edit, and soft-delete packages; toggle active/inactive; assign feature grants  |
 
 ---
 
-## Docker Run Instructions
+## Quick Start
+
+### Prerequisite
+
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) 24+ — that's all you need for the Docker workflow.
+
+### Run
 
 ```bash
+# 1. Clone
+git clone <repo-url>
+cd CreditModule
+
+# 2. Create your .env (all defaults work for local)
+cp .env.example .env
+
+# 3. Start everything
 docker compose up --build
 ```
 
-This will:
+Open **http://localhost:3000** in your browser.
 
-1. Start PostgreSQL 16 and wait for it to be healthy
+On first start Docker will:
+1. Start PostgreSQL and wait for it to be healthy
 2. Run Alembic migrations (`alembic upgrade head`)
-3. Seed demo data (admin user, buyer user, packages, features, sample purchases)
-4. Start the FastAPI server on port 8000 (internal)
-5. Build the React SPA and serve it via Nginx on **port 3000**
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-To stop:
+3. Seed demo users, packages, features, and sample transactions
+4. Serve the React SPA via Nginx on **port 3000**
 
 ```bash
+# Stop
 docker compose down
-```
 
-To stop and remove the database volume:
-
-```bash
+# Stop and wipe the database volume
 docker compose down -v
 ```
 
 ---
 
-## Demo Credentials
+## Demo Accounts
 
-| Role  | Email                          | Password      |
-|-------|--------------------------------|---------------|
-| Admin | `admin@creditos.app`           | `credits123`  |
-| Buyer | `buyer@acme.io`                | `credits123`  |
+Two accounts are seeded automatically on first startup. Use them to explore every flow without creating new accounts.
 
-These are seeded automatically on first startup. The buyer account comes pre-loaded with credits and sample purchase history so the dashboard is not empty.
+### Buyer
 
-The email/password values can be overridden via the `SEED_ADMIN_EMAIL`, `SEED_USER_EMAIL`, `SEED_ADMIN_PASSWORD`, and `SEED_USER_PASSWORD` environment variables.
+| Field    | Value            |
+|----------|------------------|
+| Email    | `buyer@acme.io`  |
+| Password | `credits123`     |
+| Role     | buyer            |
+
+Starts with **32 credits** and 4 unlocked features so the dashboard and playground are not empty on first login.
+
+### Admin
+
+| Field    | Value                  |
+|----------|------------------------|
+| Email    | `admin@creditos.app`   |
+| Password | `credits123`           |
+| Role     | admin                  |
+
+Admin-role accounts are redirected to `/admin` on login. Only this role can access the package management UI.
+
+> These credentials are intentionally public — they exist solely for portfolio review. Override them via `.env` for any non-throwaway deployment.
 
 ---
 
-## API Summary
+## Environment Variables
 
-Base path: `/api/v1`
+| Variable              | Default                                            | Notes                                              |
+|-----------------------|----------------------------------------------------|----------------------------------------------------|
+| `POSTGRES_USER`       | `creditos`                                         |                                                    |
+| `POSTGRES_PASSWORD`   | `change-me-in-production`                          | Change for any real deployment                     |
+| `POSTGRES_DB`         | `creditos`                                         |                                                    |
+| `JWT_SECRET`          | `change-me-in-production-use-secrets-token-hex-32` | Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `CORS_ORIGINS`        | `http://localhost:3000`                            | Comma-separated for multiple origins               |
+| `SEED_ADMIN_EMAIL`    | `admin@creditos.app`                               | Override demo admin email                          |
+| `SEED_ADMIN_PASSWORD` | `credits123`                                       | Override demo admin password                       |
+| `SEED_USER_EMAIL`     | `buyer@acme.io`                                    | Override demo buyer email                          |
+| `SEED_USER_PASSWORD`  | `credits123`                                       | Override demo buyer password                       |
+
+---
+
+## API Reference
+
+**Docker base URL:** `http://localhost:3000/api/v1` (proxied through Nginx)  
+**Direct backend URL:** `http://localhost:8000/api/v1` (local dev only)  
+**Interactive docs (Swagger UI):** `http://localhost:8000/docs`
+
+All protected endpoints require `Authorization: Bearer <token>`.
 
 ### Auth
 
-| Method | Path               | Description              |
-|--------|--------------------|--------------------------|
-| POST   | `/auth/signup`     | Create account, get JWT  |
-| POST   | `/auth/login`      | Authenticate, get JWT    |
-| GET    | `/auth/me`         | Current user profile     |
+| Method | Path           | Auth | Description                                  |
+|--------|----------------|------|----------------------------------------------|
+| POST   | `/auth/signup` | —    | Register; returns `{ access_token, user }`   |
+| POST   | `/auth/login`  | —    | Authenticate; returns `{ access_token, user }` |
+| GET    | `/auth/me`     | JWT  | Current user profile                         |
 
-### Packages (catalog)
+### Packages
 
-| Method | Path                  | Description                        |
-|--------|-----------------------|------------------------------------|
-| GET    | `/packages`           | List all active packages           |
-| POST   | `/packages`           | Create package (admin only)        |
-| PATCH  | `/packages/{id}`      | Update package (admin only)        |
-| DELETE | `/packages/{id}`      | Soft-delete package (admin only)   |
+| Method | Path             | Auth        | Description                                      |
+|--------|------------------|-------------|--------------------------------------------------|
+| GET    | `/packages`      | JWT         | List active packages                             |
+| POST   | `/packages`      | JWT (admin) | Create package                                   |
+| PATCH  | `/packages/{id}` | JWT (admin) | Update package name, price, credits, features    |
+| DELETE | `/packages/{id}` | JWT (admin) | Soft-delete (sets `is_active = false`)           |
 
 ### Purchases
 
-| Method | Path           | Description                                   |
-|--------|----------------|-----------------------------------------------|
-| POST   | `/purchases`   | Buy a package (requires `Idempotency-Key` header) |
+| Method | Path         | Auth | Description                                                               |
+|--------|--------------|------|---------------------------------------------------------------------------|
+| POST   | `/purchases` | JWT  | Buy a package. Requires `Idempotency-Key` header (max 160 chars). Returns HTTP 201 on creation, HTTP 200 on replay. |
 
 ### Features
 
-| Method | Path                        | Description                     |
-|--------|-----------------------------|---------------------------------|
-| GET    | `/features`                 | List all features with lock status |
-| POST   | `/features/{key}/run`       | Run a gated feature (spends credits) |
+| Method | Path                  | Auth | Description                                                      |
+|--------|-----------------------|------|------------------------------------------------------------------|
+| GET    | `/features`           | JWT  | All features with per-user `locked` / `unlocked` status          |
+| POST   | `/features/{key}/run` | JWT  | Run a feature and deduct credits. HTTP 402 = insufficient credits, HTTP 403 = feature locked |
 
 ### Wallet
 
-| Method | Path                 | Description                     |
-|--------|----------------------|---------------------------------|
-| GET    | `/wallet`            | Current balance and unlocked features |
-| GET    | `/wallet/purchases`  | Purchase history                |
-| GET    | `/wallet/ledger`     | Full credit ledger              |
+| Method | Path                | Auth | Description                                  |
+|--------|---------------------|------|----------------------------------------------|
+| GET    | `/wallet`           | JWT  | Current balance and list of unlocked features |
+| GET    | `/wallet/purchases` | JWT  | Purchase history                             |
+| GET    | `/wallet/ledger`    | JWT  | Full append-only credit ledger               |
 
-### Health (root path — not under `/api/v1`)
+### Health
 
-| Method | Path       | Description   |
-|--------|------------|---------------|
-| GET    | `/health`  | Returns `{"status": "ok"}` |
-
----
-
-## Design Decisions
-
-### Credit Ledger
-
-Every credit change (purchase top-up or feature spend) writes an append-only row to the `credit_ledger` table. Each row records the delta, reason, reference ID, and the resulting balance. The wallet balance in `user_credits` is the running total; the ledger is the audit trail.
-
-### Idempotency
-
-The `POST /purchases` endpoint requires an `Idempotency-Key` header (max 160 characters). The key is stored on the `transactions` table with a unique constraint per user. If a duplicate key is received, the original response is replayed (HTTP 200 instead of 201). If a race condition causes an `IntegrityError`, the service catches it, rolls back, and replays the original transaction.
-
-### Feature Gating
-
-Features are unlocked per-user when they purchase a package that grants that feature's entitlement. Running a feature checks (1) the user has the entitlement and (2) the user has enough credits. Credits are deducted atomically in the same database transaction as the feature run record.
+| Method | Path      | Auth | Description                              |
+|--------|-----------|------|------------------------------------------|
+| GET    | `/health` | —    | Returns `{"status":"ok"}` (root path — not under `/api/v1`) |
 
 ---
 
-## OAuth Note
+## Running Tests
 
-Login and signup use email + password only. Google OAuth buttons may appear in the UI but are non-functional placeholders. OAuth integration is outside the scope of this prototype.
-
----
-
-## Test Commands
-
-### Backend (pytest) -- 80 tests
+### Backend — 80 pytest tests
 
 ```bash
 cd backend
@@ -203,13 +214,15 @@ pip install -r requirements.txt
 python -m pytest -q
 ```
 
-Or via Docker:
+Or against the running Docker container:
 
 ```bash
 docker compose exec backend python -m pytest -q
 ```
 
-### Frontend (Vitest) -- 12 tests
+### Frontend unit tests — 12 Vitest tests
+
+Tests cover the Admin Packages page: table rendering, status pills, feature chip display, create/edit/delete modal flows, and API call verification.
 
 ```bash
 cd frontend
@@ -217,71 +230,76 @@ npm install
 npx vitest run
 ```
 
-### End-to-End (Playwright) — two packages
+### End-to-end — two Playwright packages
 
-**`frontend/e2e/`** — 15 tests targeting the Vite dev server (`http://localhost:5173`):
+**`frontend/e2e/` — 15 tests** targeting the Vite dev server (`http://localhost:5173`):
 
 ```bash
-# Start the backend and dev server first, then:
+# Start the backend + dev server first
+cd frontend && npm run dev &
+
+# Then run:
 cd frontend
 npx playwright install --with-deps
 npx playwright test
 ```
 
-Files: `auth.spec.ts`, `dashboard.spec.ts`, `store.spec.ts`, `playground.spec.ts`, `admin.spec.ts`
+Spec files: `auth.spec.ts`, `dashboard.spec.ts`, `store.spec.ts`, `playground.spec.ts`, `admin.spec.ts`
 
-**`e2e/`** — 11 tests targeting the Docker Compose stack (`http://localhost:3000`):
+**`e2e/` — 11 tests** targeting the Docker Compose stack (`http://localhost:3000`):
 
 ```bash
 docker compose up --build -d
+
 cd e2e
 npm install
 npx playwright install --with-deps chromium
 npm test
 ```
 
-Files: `tests/auth-routing.spec.ts`, `tests/store-wallet-playground.spec.ts`, `tests/admin-packages.spec.ts`
+Spec files: `tests/auth-routing.spec.ts`, `tests/store-wallet-playground.spec.ts`, `tests/admin-packages.spec.ts`
 
-Override the target URL with `E2E_BASE_URL=http://your-host npm test`.
+Override the target URL: `E2E_BASE_URL=http://your-host npm test`
+
+### Test summary
+
+| Suite          | Count | Runner     |
+|----------------|-------|------------|
+| Backend        | 80    | pytest     |
+| Frontend unit  | 12    | Vitest     |
+| Frontend e2e   | 15    | Playwright |
+| Standalone e2e | 11    | Playwright |
+| **Total**      | **118** |          |
 
 ---
 
-## Troubleshooting
+## Local Development (without Docker)
 
-### Port 3000 already in use
-
-Another process is using port 3000. Either stop it or change the published port in `docker-compose.yml`:
-
-```yaml
-ports:
-  - "3001:80"  # use 3001 instead
-```
-
-### Backend exits with "PostgreSQL is unavailable"
-
-The database health check has a 10-second start period. If your machine is slow, increase `start_period` in `docker-compose.yml` under the `db` service healthcheck.
-
-### Seed data not appearing
-
-The seed script runs on every startup but is idempotent -- it skips rows that already exist. If you suspect stale data, remove the volume and restart:
+### Backend
 
 ```bash
-docker compose down -v
-docker compose up --build
+cd backend
+python -m venv .venv
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+export DATABASE_URL=postgresql+asyncpg://creditos:password@localhost:5432/creditos
+export JWT_SECRET=dev-secret
+
+alembic upgrade head
+python -m app.db.seed        # seed demo data
+uvicorn app.main:app --reload --port 8000
 ```
 
-### Alembic migration errors after schema changes
-
-If you pulled new code with schema changes and the database volume has old data:
+### Frontend
 
 ```bash
-docker compose down -v
-docker compose up --build
+cd frontend
+npm install
+npm run dev    # http://localhost:5173
 ```
 
-### CORS errors in the browser console
-
-Make sure `CORS_ORIGINS` in your `.env` file includes the URL you are accessing the frontend from (default: `http://localhost:3000`).
+The Vite dev server proxies `/api/` → `http://localhost:8000/api/` (see `vite.config.ts`).
 
 ---
 
@@ -291,21 +309,27 @@ Make sure `CORS_ORIGINS` in your `.env` file includes the URL you are accessing 
 .
 ├── backend/
 │   ├── app/
-│   │   ├── core/         # Config, security, dependencies, error handling
-│   │   ├── db/           # Session factory, seed script
-│   │   ├── models/       # SQLAlchemy models
-│   │   ├── routers/      # FastAPI route handlers
-│   │   ├── schemas/      # Pydantic request/response models
-│   │   └── services/     # Business logic layer
-│   ├── alembic/          # Database migrations
-│   ├── tests/            # pytest test suite (80 tests)
+│   │   ├── core/        # Config (pydantic-settings), JWT, security, error handlers
+│   │   ├── db/          # Async session factory, seed script
+│   │   ├── models/      # SQLAlchemy ORM models (User, Package, Feature, CreditLedger…)
+│   │   ├── routers/     # FastAPI route handlers (auth, packages, purchases, features, wallet)
+│   │   ├── schemas/     # Pydantic v2 request/response models
+│   │   └── services/    # Business logic (wallet ops, feature gating, idempotency)
+│   ├── alembic/         # Database migration scripts
+│   ├── tests/           # pytest suite (80 tests)
 │   ├── Dockerfile
-│   └── entrypoint.sh
+│   └── entrypoint.sh    # Runs migrations + seed + uvicorn
 ├── frontend/
-│   ├── src/              # React/TypeScript source
-│   ├── e2e/              # Playwright end-to-end tests
-│   ├── nginx.conf        # Reverse proxy config
-│   └── Dockerfile
+│   ├── src/
+│   │   ├── api/         # Axios modules (one per domain: auth, packages, wallet…)
+│   │   ├── components/  # Shared UI components
+│   │   ├── contexts/    # AuthContext (JWT state + user profile)
+│   │   ├── pages/       # Login, Signup, Dashboard, Store, Playground, Admin
+│   │   └── __tests__/   # Vitest unit tests
+│   ├── e2e/             # Playwright tests targeting the Vite dev server
+│   ├── nginx.conf       # Reverse-proxy + SPA fallback config
+│   └── Dockerfile       # Multi-stage: Vite build → Nginx serve
+├── e2e/                 # Standalone Playwright tests targeting the Docker stack
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -313,6 +337,68 @@ Make sure `CORS_ORIGINS` in your `.env` file includes the URL you are accessing 
 
 ---
 
+## Design Decisions
+
+### Append-only credit ledger
+
+Every balance change appends a new row to `credit_ledger` recording the delta, reason, reference ID, and resulting balance. The `user_credits` table holds a denormalised running total for fast reads; the ledger is the audit trail. This mirrors how real billing systems work — historical records are never mutated.
+
+### Idempotent purchases
+
+`POST /purchases` requires an `Idempotency-Key` header stored with a unique-per-user constraint. A duplicate key replays the original response without creating a second charge. A concurrent duplicate that loses the race to the DB `INSERT` catches the `IntegrityError`, rolls back, and replays the original — making the endpoint safe under client retries and network timeouts.
+
+### Feature gating at the service layer
+
+Lock/unlock state is derived at query time by joining `user_features` (what the user has purchased) with the `features` table — no materialised flag to get out of sync. The credit deduction and the feature-run record are written in the same database transaction, so a crash between them is impossible.
+
+### Credits cannot go negative
+
+The service checks `balance >= cost` before deducting. Failure returns HTTP 402 (`INSUFFICIENT_CREDITS`). If the feature is not unlocked at all the endpoint returns HTTP 403 (`FEATURE_LOCKED`).
+
+### Soft deletes on packages
+
+Deleting a package sets `is_active = false` rather than removing the row. Historical purchase records keep their foreign-key reference valid. Both the buyer store and the admin catalog filter on `is_active = true`.
+
+---
+
+## Known Limitations (by design)
+
+- **No real payments** — purchases accept any request and add credits directly.
+- **No email verification or password reset** — out of scope for a portfolio prototype.
+- **Google/OAuth buttons are non-functional UI placeholders** — no OAuth flow is wired.
+- **Mock AI features** — the four gated features return simulated output, not real AI calls.
+
+---
+
+## Troubleshooting
+
+**Port 3000 already in use**  
+Change the published port in `docker-compose.yml`: `"3001:80"`, then open `http://localhost:3001`.
+
+**Backend exits immediately on startup**  
+Run `docker compose logs backend`. Usually a migration error or Postgres not ready yet. Try:
+```bash
+docker compose down -v && docker compose up --build
+```
+
+**Seed data missing after changing SEED_* vars**  
+The seed script is idempotent and skips existing rows. Wipe the volume so it re-seeds:
+```bash
+docker compose down -v && docker compose up --build
+```
+
+**`npm ci` fails during Docker build**  
+`package-lock.json` must be generated on Linux. If you regenerated it on Windows, run:
+```bash
+docker run --rm -v "${PWD}/frontend:/app" -w /app node:20-alpine npm install
+```
+then rebuild.
+
+**CORS errors in the browser console**  
+Ensure `CORS_ORIGINS` in `.env` includes the exact URL you're accessing the frontend from.
+
+---
+
 ## License
 
-This is a portfolio project. No license is granted for production use.
+Portfolio project. No licence is granted for production use.

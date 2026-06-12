@@ -30,3 +30,6 @@ postgres_data/
 
 # Claude/superpowers local visual companion
 .superpowers/
+
+# Claude Code session data
+.claude/

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CreditOS Prototype</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="app-nav" data-app-nav></nav>
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Credit package sales system</p>
+          <h1>Role-aware SaaS prototype for buying credits and unlocking gated features.</h1>
+          <p class="lead">CreditOS models the full product flow: user auth, package shopping, simulated checkout, wallet history, feature usage, and admin catalog management.</p>
+        </div>
+        <a class="btn" href="store.html">Start as user</a>
+      </header>
+      <section class="launcher-grid" aria-label="Prototype screens">
+        <a class="card launch-card" href="login.html"><strong>Login</strong><span>Auth states, role routing, loading, and invalid credentials.</span></a>
+        <a class="card launch-card" href="signup.html"><strong>Sign up</strong><span>Validation for email, password length, and password match.</span></a>
+        <a class="card launch-card" href="store.html"><strong>User Store</strong><span>Package cards with owned/new entitlement awareness and checkout modal.</span></a>
+        <a class="card launch-card" href="dashboard-wallet.html"><strong>Dashboard / Wallet</strong><span>Prominent balance, unlocked features, purchase history, and credit ledger.</span></a>
+        <a class="card launch-card" href="playground.html"><strong>Feature Playground</strong><span>Locked, affordable, and insufficient-credit barriers with live deductions.</span></a>
+        <a class="card launch-card" href="admin-packages.html"><strong>Admin Packages</strong><span>CRUD table, form drawer, validation, deletion confirmation, and empty/loading states.</span></a>
+      </section>
+    </main>
+  </div>
+  <script src="credit-system.js"></script>
+  <script>CreditOS.initShell('dashboard', 'user');</script>
+</body>
+</html>

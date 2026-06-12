@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Store · CreditOS</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="app-nav" data-app-nav></nav>
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Store</p>
+          <h1>Choose a package and start creating with gated features.</h1>
+          <p class="lead">Repurchase any owned package to add credits. New feature entitlements stay unlocked permanently after purchase.</p>
+        </div>
+        <button class="btn-secondary" id="simulate-loading" type="button">Preview loading state</button>
+      </header>
+      <section id="loading-state" class="grid-3" hidden>
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </section>
+      <section id="empty-state" class="empty-state" hidden>
+        <h2>No packages available</h2><p class="muted">Ask an admin to activate a package catalog before buyers can top up.</p>
+      </section>
+      <section class="grid-3 package-grid" id="package-grid" aria-label="Available packages">
+        <article class="card package-card" data-package="starter">
+          <div class="package-top"><div><span class="badge">Entry</span><h2>Starter Pack</h2><p class="muted">A small refill for occasional gated workflows.</p></div><div class="price">$19</div></div>
+          <span class="credit-chip">150 credits</span>
+          <div class="feature-list"><div class="feature-line"><span class="feature-name"><span class="feature-icon">↧</span>Bulk Export</span><span data-feature-status="bulk-export"></span></div></div>
+          <button class="btn" data-buy="starter" type="button">Buy</button>
+        </article>
+        <article class="card package-card featured" data-package="creator">
+          <div class="package-top"><div><span class="badge">Popular</span><h2>Creator Pack</h2><p class="muted">Unlock image generation and keep a healthy credit buffer.</p></div><div class="price">$49</div></div>
+          <span class="credit-chip">500 credits</span>
+          <div class="feature-list"><div class="feature-line"><span class="feature-name"><span class="feature-icon">✦</span>Image Generation</span><span data-feature-status="image-generation"></span></div><div class="feature-line"><span class="feature-name"><span class="feature-icon">↧</span>Bulk Export</span><span data-feature-status="bulk-export"></span></div></div>
+          <button class="btn" data-buy="creator" type="button">Buy again — adds 500 credits</button>
+        </article>
+        <article class="card package-card" data-package="growth">
+          <div class="package-top"><div><span class="badge">Team</span><h2>Growth Pack</h2><p class="muted">Adds automation entitlements for campaign teams.</p></div><div class="price">$129</div></div>
+          <span class="credit-chip">1,500 credits</span>
+          <div class="feature-list"><div class="feature-line"><span class="feature-name"><span class="feature-icon">✦</span>Image Generation</span><span data-feature-status="image-generation"></span></div><div class="feature-line"><span class="feature-name"><span class="feature-icon">↗</span>Auto-Posting</span><span data-feature-status="auto-posting"></span></div><div class="feature-line"><span class="feature-name"><span class="feature-icon">↧</span>Bulk Export</span><span data-feature-status="bulk-export"></span></div></div>
+          <button class="btn" data-buy="growth" type="button">Purchase</button>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
+    <section class="modal wide">
+      <div class="modal-header"><div><p class="eyebrow">Simulated checkout</p><h2 id="checkout-title">Confirm purchase</h2><p class="muted">No real payment is processed in this prototype.</p></div><button class="icon-btn" id="close-modal" type="button" aria-label="Close">×</button></div>
+      <div class="grid-2">
+        <div class="card card-pad"><h3>Order summary</h3><p class="muted" id="order-name"></p><div class="summary-row"><span>Price</span><strong id="order-price"></strong></div><div class="summary-row"><span>Credits granted</span><strong id="order-credits"></strong></div><div class="feature-list" id="order-features"></div></div>
+        <div class="card card-pad"><h3>Mock payment</h3><p class="muted">Use the confirm button to preview processing, success, balance updates, and unlocked features.</p><div class="field"><label>Demo card</label><input value="4242 4242 4242 4242" aria-label="Demo card" /></div><div class="modal-actions"><button class="btn-secondary" id="cancel-buy" type="button">Cancel</button><button class="btn" id="confirm-buy" type="button">Pay</button></div><div class="success-state" id="checkout-success"><h3>Purchase complete.</h3><p id="success-copy"></p><p><a href="playground.html">Go to Playground</a> · <a href="dashboard-wallet.html">View Wallet</a></p></div><p class="inline-error" id="checkout-error"></p></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="credit-system.js"></script>
+  <script>
+    CreditOS.initShell('store', 'user');
+    let selectedPackage = null;
+    const modal = document.getElementById('checkout-modal');
+    const orderFeatures = document.getElementById('order-features');
+    function findPackage(id) { return CreditOS.packages.find((pkg) => pkg.id === id); }
+    function makeLine(featureKey, owned) {
+      const line = document.createElement('div'); line.className = 'feature-line';
+      const name = document.createElement('span'); name.className = 'feature-name'; name.textContent = CreditOS.features[featureKey].name;
+      const state = document.createElement('span'); state.className = owned ? 'owned' : 'new-unlock'; state.textContent = owned ? 'Already owned' : 'New unlock';
+      line.append(name, state); return line;
+    }
+    function refreshOwnership() {
+      const state = CreditOS.read();
+      document.querySelectorAll('[data-feature-status]').forEach((el) => {
+        const owned = state.ownedFeatures.includes(el.dataset.featureStatus);
+        el.className = owned ? 'owned' : 'new-unlock';
+        el.textContent = owned ? 'Owned' : 'New';
+      });
+      document.querySelectorAll('[data-buy]').forEach((button) => {
+        const pkg = findPackage(button.dataset.buy);
+        const allOwned = pkg.features.every((f) => state.ownedFeatures.includes(f));
+        button.textContent = allOwned ? `Buy again — adds ${CreditOS.number(pkg.credits)} credits` : 'Purchase';
+      });
+    }
+    function openCheckout(pkg) {
+      selectedPackage = pkg;
+      document.getElementById('checkout-success').classList.remove('is-visible');
+      document.getElementById('checkout-error').textContent = '';
+      document.getElementById('order-name').textContent = pkg.name;
+      document.getElementById('order-price').textContent = CreditOS.money(pkg.price);
+      document.getElementById('order-credits').textContent = CreditOS.number(pkg.credits);
+      document.getElementById('confirm-buy').textContent = `Pay ${CreditOS.money(pkg.price)}`;
+      orderFeatures.replaceChildren();
+      const owned = CreditOS.read().ownedFeatures;
+      pkg.features.forEach((f) => orderFeatures.appendChild(makeLine(f, owned.includes(f))));
+      modal.classList.add('is-visible'); document.body.classList.add('modal-open');
+    }
+    document.querySelectorAll('[data-buy]').forEach((button) => button.addEventListener('click', () => openCheckout(findPackage(button.dataset.buy))));
+    function closeModal() { modal.classList.remove('is-visible'); document.body.classList.remove('modal-open'); }
+    document.getElementById('close-modal').addEventListener('click', closeModal);
+    document.getElementById('cancel-buy').addEventListener('click', closeModal);
+    document.getElementById('confirm-buy').addEventListener('click', () => {
+      const button = document.getElementById('confirm-buy');
+      CreditOS.setLoading(button, true, 'Processing');
+      setTimeout(() => {
+        const next = CreditOS.addPurchase(selectedPackage);
+        CreditOS.setLoading(button, false);
+        document.getElementById('checkout-success').classList.add('is-visible');
+        document.getElementById('success-copy').textContent = `New balance: ${CreditOS.number(next.credits)} credits. ${selectedPackage.name} entitlements are now active forever.`;
+        CreditOS.showToast(`${selectedPackage.name} purchased. Balance updated.`);
+        refreshOwnership();
+      }, 850);
+    });
+    document.getElementById('simulate-loading').addEventListener('click', () => {
+      document.getElementById('package-grid').hidden = true; document.getElementById('loading-state').hidden = false;
+      setTimeout(() => { document.getElementById('package-grid').hidden = false; document.getElementById('loading-state').hidden = true; }, 1000);
+    });
+    refreshOwnership();
+  </script>
+</body>
+</html>

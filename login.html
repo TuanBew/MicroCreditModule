@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Log in · CreditOS</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body class="auth-body">
+  <main class="auth-card">
+    <a class="brand" href="credit-app.html"><span class="brand-mark"></span><span>CreditOS</span></a>
+    <p class="eyebrow">Welcome back</p>
+    <h1>Log in to your credit workspace.</h1>
+    <p class="lead">Use Google for the fastest buyer preview, or use a buyer/admin email to test role-based routing.</p>
+    <button class="auth-provider" id="google-login" type="button"><span class="google-mark" aria-hidden="true">G</span><span>Continue with Google</span></button>
+    <div class="auth-divider"><span>or use email</span></div>
+    <form class="auth-form" id="login-form" novalidate>
+      <div class="field"><label for="email">Email</label><input id="email" type="email" value="buyer@acme.io" autocomplete="email" required /><span class="inline-error" id="email-error"></span></div>
+      <div class="field"><label for="password">Password</label><input id="password" type="password" value="credits123" autocomplete="current-password" required /><span class="inline-error" id="password-error"></span></div>
+      <button class="btn" id="login-button" type="submit">Log in</button>
+      <button class="btn-secondary" id="admin-demo" type="button">Use admin demo</button>
+      <p class="inline-error" id="form-error"></p>
+    </form>
+    <p class="auth-switch">No account yet? <a href="signup.html">Sign up</a></p>
+  </main>
+  <script src="credit-system.js"></script>
+  <script>
+    const form = document.getElementById('login-form');
+    const email = document.getElementById('email');
+    const password = document.getElementById('password');
+    const loginButton = document.getElementById('login-button');
+    const googleLogin = document.getElementById('google-login');
+    const formError = document.getElementById('form-error');
+    googleLogin.addEventListener('click', () => {
+      CreditOS.setLoading(googleLogin, true, 'Connecting Google');
+      setTimeout(() => {
+        CreditOS.update((state) => {
+          state.role = 'user';
+          state.user.email = 'riley.google@northstar.ai';
+          state.user.initials = 'RG';
+        });
+        location.href = 'dashboard-wallet.html';
+      }, 650);
+    });
+    document.getElementById('admin-demo').addEventListener('click', () => { email.value = 'admin@creditos.app'; password.value = 'credits123'; });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      formError.textContent = '';
+      document.getElementById('email-error').textContent = email.validity.valid ? '' : 'Enter a valid email address.';
+      document.getElementById('password-error').textContent = password.value ? '' : 'Password is required.';
+      if (!email.validity.valid || !password.value) return;
+      if (password.value !== 'credits123') { formError.textContent = 'Invalid credentials. Try credits123 for this prototype.'; return; }
+      CreditOS.setLoading(loginButton, true, 'Logging in');
+      setTimeout(() => {
+        const isAdmin = email.value.toLowerCase().includes('admin');
+        CreditOS.update((state) => { state.role = isAdmin ? 'admin' : 'user'; });
+        location.href = isAdmin ? 'admin-packages.html' : 'dashboard-wallet.html';
+      }, 650);
+    });
+  </script>
+</body>
+</html>

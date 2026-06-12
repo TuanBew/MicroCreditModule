@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Feature Playground · CreditOS</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="app-nav" data-app-nav></nav>
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Feature Playground</p>
+          <h1>Run gated features with clear access barriers.</h1>
+          <p class="lead">Locked means no entitlement. Insufficient credits means entitlement exists, but the current balance cannot cover the per-use cost.</p>
+        </div>
+        <a class="btn-secondary" href="store.html">Top up or unlock</a>
+      </header>
+
+      <section class="playground-grid">
+        <article class="card feature-panel" data-feature-panel="image-generation">
+          <div class="panel-title"><div><h2>Image Generation</h2><p class="muted">Generate campaign-ready visuals from a text prompt.</p></div><span class="credit-chip">10 credits</span></div>
+          <div class="access-band" data-access-band><strong data-access-title></strong><span data-access-copy></span></div>
+          <div data-action-area>
+            <div class="field"><label for="image-prompt">Prompt</label><textarea id="image-prompt">A crisp product hero image for a SaaS launch campaign, blue interface glow, no people.</textarea></div>
+            <button class="btn" data-run-feature="image-generation" type="button">Generate · 10 credits</button>
+          </div>
+          <div class="result-card" data-result><div class="mock-image">Generated image placeholder</div><p class="muted">Credits deducted immediately. A ledger row is now available in Wallet.</p></div>
+        </article>
+
+        <article class="card feature-panel" data-feature-panel="auto-posting">
+          <div class="panel-title"><div><h2>Auto-Posting</h2><p class="muted">Schedule an approved post to a connected destination.</p></div><span class="credit-chip">250 credits</span></div>
+          <div class="access-band" data-access-band><strong data-access-title></strong><span data-access-copy></span></div>
+          <div data-action-area>
+            <div class="field"><label for="post-content">Post content</label><textarea id="post-content">New launch assets are ready. Explore the campaign kit and pick your next channel.</textarea></div>
+            <div class="field"><label for="destination">Destination</label><select id="destination"><option>LinkedIn company page</option><option>Product updates channel</option><option>Customer newsletter queue</option></select></div>
+            <button class="btn" data-run-feature="auto-posting" type="button">Schedule · 250 credits</button>
+          </div>
+          <div class="result-card" data-result><h3>Post scheduled.</h3><p class="muted">The destination queue received the draft and credits were deducted.</p></div>
+        </article>
+
+        <article class="card feature-panel" data-feature-panel="bulk-export">
+          <div class="panel-title"><div><h2>Bulk Export</h2><p class="muted">Export generated assets and metadata in batches.</p></div><span class="credit-chip">5 credits</span></div>
+          <div class="access-band" data-access-band><strong data-access-title></strong><span data-access-copy></span></div>
+          <div data-action-area>
+            <div class="field"><label for="export-format">Export format</label><select id="export-format"><option>CSV + asset links</option><option>JSON manifest</option><option>ZIP archive</option></select></div>
+            <button class="btn" data-run-feature="bulk-export" type="button">Export · 5 credits</button>
+          </div>
+          <div class="result-card" data-result><h3>Export prepared.</h3><p class="muted">The batch file is ready and credits were deducted.</p></div>
+        </article>
+
+        <article class="card feature-panel" data-feature-panel="audience-insights">
+          <div class="panel-title"><div><h2>Audience Insights</h2><p class="muted">Score campaign assets against saved audience segments.</p></div><span class="credit-chip">80 credits</span></div>
+          <div class="access-band" data-access-band><strong data-access-title></strong><span data-access-copy></span></div>
+          <div data-action-area>
+            <div class="field"><label for="segment-select">Segment</label><select id="segment-select"><option>North America mid-market buyers</option><option>Developer-tool evaluators</option><option>Agency partner accounts</option></select></div>
+            <button class="btn" data-run-feature="audience-insights" type="button">Score · 80 credits</button>
+          </div>
+          <div class="result-card" data-result><h3>Audience score ready.</h3><p class="muted">The segment fit summary is available and credits were deducted.</p></div>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="credit-system.js"></script>
+  <script>
+    CreditOS.initShell('playground', 'user');
+    function renderPanel(panel) {
+      const key = panel.dataset.featurePanel;
+      const feature = CreditOS.features[key];
+      const owned = CreditOS.hasFeature(key);
+      const affordable = CreditOS.canAfford(key);
+      const band = panel.querySelector('[data-access-band]');
+      const title = panel.querySelector('[data-access-title]');
+      const copy = panel.querySelector('[data-access-copy]');
+      const actionArea = panel.querySelector('[data-action-area]');
+      const button = panel.querySelector('[data-run-feature]');
+      actionArea.hidden = false; button.disabled = false;
+      if (!owned) {
+        band.className = 'access-band locked'; title.textContent = 'Locked'; copy.textContent = `Unlock with ${feature.unlock}.`;
+        actionArea.hidden = true;
+        const unlock = document.createElement('a'); unlock.className = 'btn-secondary'; unlock.href = 'store.html'; unlock.textContent = 'Go to Store';
+        if (!panel.querySelector('[data-unlock-cta]')) { unlock.dataset.unlockCta = ''; band.appendChild(unlock); }
+      } else if (!affordable) {
+        band.className = 'access-band insufficient'; title.textContent = 'Insufficient credits'; copy.textContent = `You own this feature, but need ${feature.cost} credits to run it.`;
+        button.disabled = true;
+        if (!panel.querySelector('[data-topup-cta]')) { const topup = document.createElement('a'); topup.className = 'btn-secondary'; topup.href = 'store.html'; topup.textContent = 'Top up'; topup.dataset.topupCta = ''; band.appendChild(topup); }
+      } else {
+        band.className = 'access-band available'; title.textContent = 'Unlocked & affordable'; copy.textContent = `${CreditOS.number(CreditOS.read().credits)} credits available.`;
+        panel.querySelectorAll('[data-unlock-cta], [data-topup-cta]').forEach((el) => el.remove());
+      }
+    }
+    function renderAll() { document.querySelectorAll('[data-feature-panel]').forEach(renderPanel); }
+    document.querySelectorAll('[data-run-feature]').forEach((button) => button.addEventListener('click', () => {
+      const key = button.dataset.runFeature;
+      CreditOS.setLoading(button, true, 'Running');
+      setTimeout(() => {
+        CreditOS.spendCredits(key);
+        CreditOS.setLoading(button, false);
+        button.closest('[data-feature-panel]').querySelector('[data-result]').classList.add('is-visible');
+        CreditOS.showToast(`${CreditOS.features[key].name} ran. ${CreditOS.features[key].cost} credits deducted.`);
+        renderAll();
+      }, 800);
+    }));
+    renderAll();
+    window.addEventListener('creditos:update', renderAll);
+  </script>
+</body>
+</html>

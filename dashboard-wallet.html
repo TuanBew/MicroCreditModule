@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard Wallet · CreditOS</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="app-nav" data-app-nav></nav>
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Dashboard / Wallet</p>
+          <h1>Your credit balance and permanent feature access.</h1>
+          <p class="lead">Balance is metered and changes with every purchase or feature run. Entitlements stay unlocked once purchased.</p>
+        </div>
+        <a class="btn" href="store.html">Buy credits</a>
+      </header>
+
+      <section class="wallet-hero">
+        <article class="balance-hero">
+          <p class="eyebrow" style="color: oklch(84% 0.09 82);">Available balance</p>
+          <div class="balance-number"><span data-credit-balance></span></div>
+          <p>Credits ready for gated workflows. Every run creates a ledger entry.</p>
+          <a class="btn" href="store.html">Top up balance</a>
+        </article>
+        <article class="card card-pad">
+          <div class="panel-title"><h2>Entitlements</h2><span class="status-pill success">Permanent unlocks</span></div>
+          <div class="entitlement-grid" id="entitlements"></div>
+        </article>
+      </section>
+
+      <section class="card card-pad" style="margin-top: 18px;">
+        <div class="panel-title">
+          <div><h2>History</h2><p class="muted">Purchases and credit activity are separated so finance and product usage tell different stories.</p></div>
+          <div class="tabs" role="tablist"><button class="tab is-active" data-tab="purchases" type="button">Purchase history</button><button class="tab" data-tab="ledger" type="button">Credit activity</button></div>
+        </div>
+        <div id="loading-zone" class="skeleton" hidden></div>
+        <div class="tab-panel" id="panel-purchases">
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Package</th><th>Amount paid</th><th>Credits</th><th>Status</th></tr></thead><tbody id="purchase-body"></tbody></table></div>
+          <div class="empty-state" id="purchase-empty" hidden><h3>No purchases yet</h3><p class="muted">Choose a package in the Store to activate credits and feature access.</p><a class="btn" href="store.html">Browse packages</a></div>
+        </div>
+        <div class="tab-panel" id="panel-ledger" hidden>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Resulting balance</th></tr></thead><tbody id="ledger-body"></tbody></table></div>
+          <div class="empty-state" id="ledger-empty" hidden><h3>No credit movement yet</h3><p class="muted">Purchases and feature runs will appear here as signed ledger entries.</p></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="credit-system.js"></script>
+  <script>
+    CreditOS.initShell('dashboard', 'user');
+    const entitlements = document.getElementById('entitlements');
+    const purchaseBody = document.getElementById('purchase-body');
+    const ledgerBody = document.getElementById('ledger-body');
+    function td(text, className) { const cell = document.createElement('td'); if (className) cell.className = className; cell.textContent = text; return cell; }
+    function renderEntitlements() {
+      const state = CreditOS.read();
+      entitlements.replaceChildren();
+      Object.entries(CreditOS.features).forEach(([key, feature]) => {
+        const owned = state.ownedFeatures.includes(key);
+        const card = document.createElement('div'); card.className = `entitlement ${owned ? '' : 'locked'}`;
+        const title = document.createElement('h3'); title.textContent = feature.name;
+        const meta = document.createElement('p'); meta.className = 'muted'; meta.textContent = owned ? `${feature.cost} credits per use` : `Locked · unlock with ${feature.unlock}`;
+        const link = document.createElement('a'); link.className = owned ? 'btn-secondary' : 'btn-ghost'; link.href = owned ? 'playground.html' : 'store.html'; link.textContent = owned ? 'Open in Playground' : 'Unlock';
+        card.append(title, meta, link); entitlements.appendChild(card);
+      });
+    }
+    function renderTables() {
+      const state = CreditOS.read();
+      purchaseBody.replaceChildren(); ledgerBody.replaceChildren();
+      state.purchases.forEach((item) => { const row = document.createElement('tr'); row.append(td(item.date), td(item.package), td(CreditOS.money(item.amount)), td(CreditOS.number(item.credits)), td(item.status)); purchaseBody.appendChild(row); });
+      state.ledger.forEach((item) => { const row = document.createElement('tr'); row.append(td(item.date), td(item.description), td((item.amount > 0 ? '+' : '') + CreditOS.number(item.amount), item.amount > 0 ? 'amount-pos' : 'amount-neg'), td(CreditOS.number(item.balance))); ledgerBody.appendChild(row); });
+      document.getElementById('purchase-empty').hidden = state.purchases.length > 0;
+      document.getElementById('ledger-empty').hidden = state.ledger.length > 0;
+    }
+    document.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('click', () => {
+      document.querySelectorAll('[data-tab]').forEach((t) => t.classList.toggle('is-active', t === tab));
+      document.getElementById('panel-purchases').hidden = tab.dataset.tab !== 'purchases';
+      document.getElementById('panel-ledger').hidden = tab.dataset.tab !== 'ledger';
+    }));
+    renderEntitlements(); renderTables();
+    window.addEventListener('creditos:update', () => { renderEntitlements(); renderTables(); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Packages · CreditOS</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="app-nav" data-app-nav></nav>
+    <main class="main">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Admin catalog</p>
+          <h1>Manage credit packages without touching customer usage history.</h1>
+          <p class="lead">Create, edit, deactivate, and safely remove catalog entries. Existing purchase records remain preserved.</p>
+        </div>
+        <button class="btn" id="new-package" type="button">New package</button>
+      </header>
+
+      <section class="card card-pad admin-layout">
+        <div class="toolbar">
+          <div>
+            <h2>Packages</h2>
+            <p class="muted">Feature entitlements are sourced from the fixed feature catalog below.</p>
+          </div>
+          <button class="btn-secondary" id="preview-loading" type="button">Preview loading</button>
+        </div>
+        <div id="table-loading" class="skeleton" hidden></div>
+        <div id="admin-empty" class="empty-state" hidden>
+          <h3>No packages yet</h3>
+          <p class="muted">Create the first package so buyers can purchase credits and unlock features.</p>
+          <button class="btn" data-open-create type="button">Create package</button>
+        </div>
+        <div class="table-wrap" id="admin-table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Price</th><th>Credits</th><th>Unlocked features</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="package-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card card-pad" style="margin-top: 18px;">
+        <div class="panel-title"><div><h2>Feature catalog</h2><p class="muted">Reference-only feature list used by admins when building packages.</p></div><span class="status-pill active">Optional support view</span></div>
+        <div class="grid-3" id="feature-catalog"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="package-modal" role="dialog" aria-modal="true" aria-labelledby="package-modal-title">
+    <section class="modal wide">
+      <div class="modal-header"><div><p class="eyebrow">Catalog form</p><h2 id="package-modal-title">New package</h2></div><button class="icon-btn" data-close-modal type="button" aria-label="Close">×</button></div>
+      <form id="package-form" class="stack" novalidate>
+        <input type="hidden" id="package-id" />
+        <div class="field"><label for="pkg-name">Name</label><input id="pkg-name" required /><span class="inline-error" id="name-error"></span></div>
+        <div class="field"><label for="pkg-description">Description</label><textarea id="pkg-description"></textarea></div>
+        <div class="form-row">
+          <div class="field"><label for="pkg-price">Price</label><input id="pkg-price" inputmode="numeric" required /><span class="inline-error" id="price-error"></span></div>
+          <div class="field"><label for="pkg-credits">Credit amount</label><input id="pkg-credits" inputmode="numeric" required /><span class="inline-error" id="credits-error"></span></div>
+        </div>
+        <div class="field"><label>Features unlocked</label><div class="checkbox-list" id="feature-checks"></div><span class="inline-error" id="features-error"></span></div>
+        <label class="checkbox-row"><input type="checkbox" id="pkg-active" checked /> Active package</label>
+        <div class="modal-actions"><button class="btn-secondary" data-close-modal type="button">Cancel</button><button class="btn" id="save-package" type="submit">Save package</button></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+    <section class="modal">
+      <div class="modal-header"><div><p class="eyebrow">Safe removal</p><h2 id="delete-title">Deactivate package?</h2><p class="muted">Existing purchase history and customer entitlements stay preserved. The package will be hidden from future purchases.</p></div><button class="icon-btn" data-close-delete type="button" aria-label="Close">×</button></div>
+      <div class="modal-actions"><button class="btn-secondary" data-close-delete type="button">Cancel</button><button class="danger-btn" id="confirm-delete" type="button">Deactivate package</button></div>
+    </section>
+  </div>
+
+  <script src="credit-system.js"></script>
+  <script>
+    CreditOS.initShell('packages', 'admin');
+    let adminPackages = CreditOS.packages.map((pkg) => ({ ...pkg }));
+    let deleteTarget = null;
+    const body = document.getElementById('package-body');
+    const packageModal = document.getElementById('package-modal');
+    const deleteModal = document.getElementById('delete-modal');
+    const form = document.getElementById('package-form');
+
+    function cell(text) { const td = document.createElement('td'); td.textContent = text; return td; }
+    function openPackageModal(pkg) {
+      document.getElementById('package-modal-title').textContent = pkg ? 'Edit package' : 'New package';
+      document.getElementById('package-id').value = pkg?.id || '';
+      document.getElementById('pkg-name').value = pkg?.name || '';
+      document.getElementById('pkg-description').value = pkg?.description || '';
+      document.getElementById('pkg-price').value = pkg?.price || '';
+      document.getElementById('pkg-credits').value = pkg?.credits || '';
+      document.getElementById('pkg-active').checked = pkg?.active ?? true;
+      document.querySelectorAll('[data-feature-check]').forEach((check) => { check.checked = pkg ? pkg.features.includes(check.value) : false; });
+      document.querySelectorAll('.inline-error').forEach((el) => { el.textContent = ''; });
+      packageModal.classList.add('is-visible'); document.body.classList.add('modal-open');
+    }
+    function closeModals() { packageModal.classList.remove('is-visible'); deleteModal.classList.remove('is-visible'); document.body.classList.remove('modal-open'); }
+    function featureChips(features) {
+      const wrap = document.createElement('div'); wrap.className = 'feature-chips';
+      features.forEach((key) => { const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = CreditOS.features[key].name; wrap.appendChild(chip); });
+      return wrap;
+    }
+    function actionButton(label, className, onClick) { const btn = document.createElement('button'); btn.type = 'button'; btn.className = className; btn.textContent = label; btn.addEventListener('click', onClick); return btn; }
+    function renderPackages() {
+      body.replaceChildren();
+      document.getElementById('admin-empty').hidden = adminPackages.length > 0;
+      document.getElementById('admin-table-wrap').hidden = adminPackages.length === 0;
+      adminPackages.forEach((pkg) => {
+        const tr = document.createElement('tr');
+        tr.append(cell(pkg.name), cell(CreditOS.money(pkg.price)), cell(CreditOS.number(pkg.credits)));
+        const featureTd = document.createElement('td'); featureTd.appendChild(featureChips(pkg.features)); tr.appendChild(featureTd);
+        const statusTd = document.createElement('td'); const status = document.createElement('span'); status.className = `status-pill ${pkg.active ? 'active' : 'inactive'}`; status.textContent = pkg.active ? 'Active' : 'Inactive'; statusTd.appendChild(status); tr.appendChild(statusTd);
+        const actions = document.createElement('td'); actions.append(actionButton('Edit', 'btn-ghost', () => openPackageModal(pkg)), actionButton('Delete', 'danger-btn', () => { deleteTarget = pkg.id; deleteModal.classList.add('is-visible'); document.body.classList.add('modal-open'); })); tr.appendChild(actions);
+        body.appendChild(tr);
+      });
+    }
+    function renderFeatureCatalog() {
+      const catalog = document.getElementById('feature-catalog'); catalog.replaceChildren();
+      Object.entries(CreditOS.features).forEach(([key, feature]) => {
+        const card = document.createElement('article'); card.className = 'entitlement';
+        const title = document.createElement('h3'); title.textContent = feature.name;
+        const meta = document.createElement('p'); meta.className = 'muted'; meta.textContent = `${key} · ${feature.cost} credits per use`;
+        const desc = document.createElement('p'); desc.textContent = feature.description;
+        card.append(title, meta, desc); catalog.appendChild(card);
+      });
+    }
+    function buildFeatureChecks() {
+      const checks = document.getElementById('feature-checks'); checks.replaceChildren();
+      Object.entries(CreditOS.features).forEach(([key, feature]) => {
+        const label = document.createElement('label'); label.className = 'checkbox-row';
+        const input = document.createElement('input'); input.type = 'checkbox'; input.value = key; input.dataset.featureCheck = '';
+        label.append(input, document.createTextNode(`${feature.name} · ${feature.cost} credits/use`)); checks.appendChild(label);
+      });
+    }
+    document.getElementById('new-package').addEventListener('click', () => openPackageModal(null));
+    document.querySelectorAll('[data-open-create]').forEach((btn) => btn.addEventListener('click', () => openPackageModal(null)));
+    document.querySelectorAll('[data-close-modal], [data-close-delete]').forEach((btn) => btn.addEventListener('click', closeModals));
+    document.getElementById('preview-loading').addEventListener('click', () => {
+      document.getElementById('admin-table-wrap').hidden = true; document.getElementById('table-loading').hidden = false;
+      setTimeout(() => { document.getElementById('admin-table-wrap').hidden = false; document.getElementById('table-loading').hidden = true; }, 900);
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const name = document.getElementById('pkg-name').value.trim();
+      const price = Number(document.getElementById('pkg-price').value);
+      const credits = Number(document.getElementById('pkg-credits').value);
+      const features = Array.from(document.querySelectorAll('[data-feature-check]:checked')).map((el) => el.value);
+      document.getElementById('name-error').textContent = name ? '' : 'Name is required.';
+      document.getElementById('price-error').textContent = price > 0 ? '' : 'Enter a numeric price.';
+      document.getElementById('credits-error').textContent = credits > 0 ? '' : 'Enter a numeric credit amount.';
+      document.getElementById('features-error').textContent = features.length ? '' : 'Choose at least one feature entitlement.';
+      if (!name || !(price > 0) || !(credits > 0) || !features.length) return;
+      const save = document.getElementById('save-package'); CreditOS.setLoading(save, true, 'Saving');
+      setTimeout(() => {
+        const id = document.getElementById('package-id').value || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const next = { id, name, description: document.getElementById('pkg-description').value.trim(), price, credits, features, active: document.getElementById('pkg-active').checked };
+        const idx = adminPackages.findIndex((pkg) => pkg.id === id);
+        if (idx >= 0) adminPackages[idx] = next; else adminPackages.unshift(next);
+        CreditOS.setLoading(save, false); closeModals(); renderPackages(); CreditOS.showToast('Package saved. Catalog updated.');
+      }, 650);
+    });
+    document.getElementById('confirm-delete').addEventListener('click', () => {
+      const btn = document.getElementById('confirm-delete'); CreditOS.setLoading(btn, true, 'Deactivating');
+      setTimeout(() => {
+        const pkg = adminPackages.find((item) => item.id === deleteTarget);
+        if (pkg) pkg.active = false;
+        CreditOS.setLoading(btn, false); closeModals(); renderPackages(); CreditOS.showToast('Package deactivated. Purchase history preserved.');
+      }, 650);
+    });
+    buildFeatureChecks(); renderPackages(); renderFeatureCatalog();
+  </script>
+</body>
+</html>

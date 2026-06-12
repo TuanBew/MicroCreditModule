@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign up · CreditOS</title>
+  <link rel="stylesheet" href="credit-system.css" />
+</head>
+<body class="auth-body">
+  <main class="auth-card">
+    <a class="brand" href="credit-app.html"><span class="brand-mark"></span><span>CreditOS</span></a>
+    <p class="eyebrow">Create workspace</p>
+    <h1>Start with credits and unlocked capability.</h1>
+    <button class="auth-provider" id="google-signup" type="button"><span class="google-mark" aria-hidden="true">G</span><span>Sign up with Google</span></button>
+    <div class="auth-divider"><span>or create with email</span></div>
+    <form class="auth-form" id="signup-form" novalidate>
+      <div class="field"><label for="email">Email</label><input id="email" type="email" placeholder="you@company.com" required /><span class="inline-error" id="email-error"></span></div>
+      <div class="field"><label for="password">Password</label><input id="password" type="password" placeholder="At least 8 characters" required /><span class="inline-error" id="password-error"></span></div>
+      <div class="field"><label for="confirm">Confirm password</label><input id="confirm" type="password" required /><span class="inline-error" id="confirm-error"></span></div>
+      <button class="btn" id="signup-button" type="submit">Create account</button>
+    </form>
+    <p class="auth-switch">Already have an account? <a href="login.html">Log in</a></p>
+  </main>
+  <script src="credit-system.js"></script>
+  <script>
+    const form = document.getElementById('signup-form');
+    const email = document.getElementById('email');
+    const password = document.getElementById('password');
+    const confirm = document.getElementById('confirm');
+    const button = document.getElementById('signup-button');
+    const googleSignup = document.getElementById('google-signup');
+    googleSignup.addEventListener('click', () => {
+      CreditOS.setLoading(googleSignup, true, 'Connecting Google');
+      setTimeout(() => {
+        CreditOS.update((state) => {
+          state.role = 'user';
+          state.user.email = 'riley.google@northstar.ai';
+          state.user.initials = 'RG';
+        });
+        CreditOS.showToast('Google account connected. Welcome to your wallet.');
+        location.href = 'dashboard-wallet.html';
+      }, 650);
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const emailOk = email.validity.valid;
+      const passOk = password.value.length >= 8;
+      const matchOk = password.value === confirm.value && confirm.value.length > 0;
+      document.getElementById('email-error').textContent = emailOk ? '' : 'Use a valid work email.';
+      document.getElementById('password-error').textContent = passOk ? '' : 'Password must be at least 8 characters.';
+      document.getElementById('confirm-error').textContent = matchOk ? '' : 'Passwords must match.';
+      if (!emailOk || !passOk || !matchOk) return;
+      CreditOS.setLoading(button, true, 'Creating');
+      setTimeout(() => {
+        CreditOS.update((state) => { state.role = 'user'; state.user.email = email.value; state.user.initials = email.value.slice(0, 2).toUpperCase(); });
+        CreditOS.showToast('Account created. Welcome to your wallet.');
+        location.href = 'dashboard-wallet.html';
+      }, 650);
+    });
+  </script>
+</body>
+</html>
