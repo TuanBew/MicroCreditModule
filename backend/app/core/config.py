@@ -8,9 +8,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-test-secret-dev-test-secret-32"
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 1440
-    seed_admin_email: str = "admin@creditos.local"
+    seed_admin_email: str = "admin@creditos.app"
     seed_admin_password: str = "credits123"
-    seed_user_email: str = "buyer@creditos.local"
+    seed_user_email: str = "buyer@acme.io"
     seed_user_password: str = "credits123"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
