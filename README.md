@@ -8,44 +8,53 @@ No real payments. No real OAuth. Everything runs offline with a single `docker c
 
 ## Tech Stack
 
-| Layer       | Technology                                                   |
-|-------------|--------------------------------------------------------------|
-| Frontend    | React 18, TypeScript, Vite, React Router 6, Axios            |
-| Backend     | FastAPI (Python 3.12), SQLAlchemy 2 (async), Alembic         |
-| Database    | PostgreSQL 16                                                |
-| Auth        | JWT (HS256) — email + password only, no third-party OAuth    |
-| Serving     | Nginx reverse-proxy in front of the React SPA                |
-| Dev/deploy  | Docker Compose                                               |
-| Testing     | pytest · Vitest + React Testing Library · Playwright         |
+| Layer       | Technology                                                                    |
+|-------------|-------------------------------------------------------------------------------|
+| Frontend    | React 18, TypeScript, Vite, React Router 6, Axios                             |
+| Backend     | FastAPI (Python 3.12), SQLAlchemy 2, Alembic                                  |
+| Database    | PostgreSQL 16                                                                 |
+| Auth        | JWT (HS256) — httpOnly cookie + CSRF double-submit (Phase 2)                  |
+| Queue       | Celery + Redis 7 — async purchase processing (Phase 2)                        |
+| Serving     | Nginx reverse-proxy in front of the React SPA                                 |
+| Dev/deploy  | Docker Compose                                                                |
+| Testing     | pytest · Vitest + React Testing Library · Playwright · Locust (Phase 2)       |
 
 ---
 
 ## Architecture
 
-```
-                          Browser
-                             |
-                      :3000 (HTTP)
-                             |
-                    ┌────────▼────────┐
-                    │  Nginx          │
-                    │  (frontend)     │
-                    └──┬──────────┬──┘
-                       │          │
-              /        │          │  /api/*
-         (React SPA)   │          │
-                       │   ┌──────▼──────┐
-                       │   │  FastAPI    │
-                       │   │  :8000      │
-                       │   └──────┬──────┘
-                       │          │
-                       │   ┌──────▼──────┐
-                       │   │  PostgreSQL │
-                       │   │  :5432      │
-                       │   └─────────────┘
+```mermaid
+flowchart LR
+    subgraph client ["Browser"]
+        browser["React SPA"]
+    end
+    subgraph gateway ["Nginx :3000"]
+        nginx["Reverse Proxy"]
+    end
+    subgraph service ["Application Layer"]
+        fastapi["FastAPI Backend"]
+        worker["Celery Worker"]
+    end
+    subgraph datastore ["Data Stores"]
+        postgres["PostgreSQL 16"]
+        redisStore["Redis Cache"]
+    end
+    subgraph async ["Task Queue"]
+        taskQueue["Purchase Task Queue"]
+    end
+
+    browser -->|"HTTPS"| nginx
+    nginx -->|"Routes /api"| fastapi
+    fastapi -->|"Read / Write"| postgres
+    fastapi -->|"Cache / Rate limit"| redisStore
+    fastapi -.->|"Enqueue purchase"| taskQueue
+    taskQueue -.->|"Consume task"| worker
+    worker -->|"Write credits"| postgres
 ```
 
-All three services share a Docker Compose network (`creditos`). Only Nginx publishes a port (3000). API requests from the browser are reverse-proxied at the Nginx layer from `/api/` → `http://backend:8000/api/` — no CORS headers needed in Docker mode.
+> [View interactive architecture diagram in FigJam](https://www.figma.com/board/uEno7HDsjFsFJNXbY1fDPq)
+
+All services share a Docker Compose network (`creditos`). Only Nginx publishes a port (3000). API requests from the browser are proxied at the Nginx layer from `/api/` → `http://backend:8000/api/`. The Celery worker shares the backend image and database connection but runs as a separate process consuming tasks from Redis.
 
 ---
 
@@ -55,8 +64,8 @@ All three services share a Docker Compose network (`creditos`). Only Nginx publi
 
 | Page               | What it does                                                                             |
 |--------------------|------------------------------------------------------------------------------------------|
-| **Login / Signup** | Email + password auth; JWT stored in `localStorage`                                      |
-| **Store**          | Browse and purchase credit packages; idempotency-keyed so double-clicks are safe         |
+| **Login / Signup** | Email + password auth; session stored in httpOnly cookie (no localStorage)               |
+| **Store**          | Browse and purchase credit packages; async processing with live status polling           |
 | **Dashboard**      | Live credit balance, unlocked features, purchase history, full credit ledger             |
 | **Playground**     | Run any of the four gated mock features; credits deducted per run; HTTP 402 when empty   |
 
@@ -68,11 +77,103 @@ All three services share a Docker Compose network (`creditos`). Only Nginx publi
 
 ---
 
+## Phase 2: Scaling & Security Hardening
+
+Phase 1 shipped a complete, working application. Phase 2 is about making it defensible and scalable — closing the gap between "it works in a demo" and "it holds up under real conditions."
+
+### What problems this solves
+
+**Synchronous purchases are a liability.** Phase 1's purchase endpoint granted credits inline, inside the HTTP request. That works in isolation, but payment gateways have latency, retry logic is error-prone, and a request timeout at the wrong moment can leave a transaction half-written. Async processing with idempotent workers separates "accept the purchase" from "fulfil the purchase," making each half simpler and independently reliable.
+
+**`localStorage` is the wrong place for auth tokens.** Any injected JavaScript — from a compromised dependency, an ad script, a browser extension — can read `localStorage`. In a system where tokens authorise financial transactions, that trade-off is unacceptable. `httpOnly` cookies are inaccessible to scripts entirely. CSRF double-submit is the standard counterpart that protects against the one attack cookies open up.
+
+**An unguarded login endpoint is an open door.** Without rate limiting, brute-forcing passwords is just a matter of time and bandwidth. Rate limiting per IP raises the bar enough to make credential stuffing impractical.
+
+**Read-heavy endpoints shouldn't hit the database on every request.** The package catalog is loaded on every store visit, by every user, but changes only when an admin writes to it. Caching it in Redis with invalidation on writes removes the unnecessary load.
+
+### Async purchase architecture
+
+```mermaid
+flowchart LR
+    subgraph client ["Browser"]
+        checkout["Checkout Click"]
+        poller["Status Poller"]
+    end
+    subgraph gateway ["Nginx"]
+        nginx["Reverse Proxy"]
+    end
+    subgraph service ["Backend"]
+        purchaseApi["Purchase API"]
+        purchaseWorker["Celery Worker"]
+    end
+    subgraph datastore ["Database"]
+        postgres["PostgreSQL"]
+    end
+    subgraph async ["Task Queue"]
+        purchaseQueue["Task Queue"]
+    end
+
+    checkout -->|"POST /purchases"| nginx
+    poller -->|"GET /status"| nginx
+    nginx -->|"Route"| purchaseApi
+    purchaseApi -->|"Write pending tx"| postgres
+    purchaseApi -.->|"Enqueue task"| purchaseQueue
+    purchaseQueue -.->|"Consume"| purchaseWorker
+    purchaseWorker -->|"Grant credits"| postgres
+```
+
+> [View async flow diagram in FigJam](https://www.figma.com/board/uEno7HDsjFsFJNXbY1fDPq)
+
+**How it works:**
+
+1. `POST /purchases` writes a `pending` transaction row and returns `202 Accepted` with the `transaction_id`. No credits are granted yet.
+2. A Celery task (`process_purchase`) is enqueued with the transaction ID.
+3. The browser polls `GET /purchases/{id}/status` every 1.5 seconds.
+4. The worker picks up the task, acquires a row-level lock (`SELECT FOR UPDATE`), checks the status is still `"pending"` (idempotency guard), grants credits, and marks the transaction `"completed"`.
+5. The next poll sees `"completed"` and the UI updates with the new balance.
+
+The worker is safe to run twice: if a task is retried by Celery's at-least-once delivery, the status check (`!= "pending"`) makes the second run a no-op. Credits are never double-granted.
+
+### Security design
+
+**Token storage — httpOnly cookies + CSRF double-submit**
+
+| | Before (Phase 1) | After (Phase 2) |
+|--|---|---|
+| Token location | `localStorage` | `httpOnly` cookie — inaccessible to JavaScript |
+| CSRF protection | None needed (header-based auth) | Double-submit cookie: JS reads `creditos_csrf_token` cookie, sends as `X-CSRF-Token` header; backend compares with `secrets.compare_digest` |
+| Token lifetime | 24 hours | 30 minutes (configurable) |
+| Login protection | None | slowapi rate limiter — 10 requests/minute per IP |
+
+**Why this matters:** An XSS attack that injects a script can exfiltrate a `localStorage` token silently. The same attack cannot read an `httpOnly` cookie. CSRF is the complementary risk: a malicious site can trigger cross-origin requests that carry the user's cookie — but it cannot read the CSRF token from a different origin, so the `X-CSRF-Token` header check blocks the attack.
+
+**Server-side invariants (audited, no code changes needed):**
+
+- IDOR protection — all wallet, ledger, and transaction endpoints derive the user from the JWT, never from request parameters
+- Server-side pricing — `PurchaseRequest` carries only `package_id`; price and credits are always read from the database
+- Mass assignment prevention — `SignupRequest` accepts only `email` and `password`; `role` and `balance` cannot be set by a client
+- Overspend prevention — `spend_credits` uses `SELECT FOR UPDATE` + balance check; negative balances are structurally impossible
+- Replay safety — idempotency key stored with a unique-per-user constraint; duplicates replay the original without creating a second charge
+
+### Current progress
+
+| Step | What it builds | Status |
+|------|----------------|--------|
+| **Step 1** — Infrastructure | Redis + Celery worker added to Docker Compose; Alembic migration for transaction status lifecycle (`pending → processing → completed / failed`); config, cache module, Celery app | ✅ Done |
+| **Step 2** — Async purchase flow | `POST /purchases` → 202; idempotent Celery worker; `GET /purchases/{id}/status` endpoint; updated tests | ✅ Done |
+| **Step 3** — Auth hardening | httpOnly cookie auth; CSRF double-submit on all state-changing endpoints; login rate limiting; frontend drops localStorage, adds CSRF interceptor | ✅ Done |
+| **Step 4** — Attack tests | Failing tests that prove: IDOR blocked, tampered prices rejected, mass assignment rejected, overspend blocked, JWT tampering rejected, CSRF bypass blocked | 🔜 Upcoming |
+| **Step 5** — Catalog caching | Redis cache on `GET /packages` and `GET /features`; invalidated on admin writes | 🔜 Upcoming |
+| **Step 6** — Async store UI | `usePurchasePoller` hook; Store modal transitions: idle → submitting → processing → success / failed | 🔜 Upcoming |
+| **Step 7** — Load test | Locust concurrent-buyer simulation (50 users); correctness validator checking ledger integrity and no negative balances | 🔜 Upcoming |
+
+---
+
 ## Quick Start
 
 ### Prerequisite
 
-[Docker Desktop](https://www.docker.com/products/docker-desktop/) 24+ — that's all you need for the Docker workflow.
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) 24+ — that's all you need.
 
 ### Run
 
@@ -91,10 +192,11 @@ docker compose up --build
 Open **http://localhost:3000** in your browser.
 
 On first start Docker will:
-1. Start PostgreSQL and wait for it to be healthy
+1. Start PostgreSQL and Redis, wait for both to be healthy
 2. Run Alembic migrations (`alembic upgrade head`)
 3. Seed demo users, packages, features, and sample transactions
-4. Serve the React SPA via Nginx on **port 3000**
+4. Start the Celery worker (purchase processing)
+5. Serve the React SPA via Nginx on **port 3000**
 
 ```bash
 # Stop
@@ -108,7 +210,7 @@ docker compose down -v
 
 ## Demo Accounts
 
-Two accounts are seeded automatically on first startup. Use them to explore every flow without creating new accounts.
+Two accounts are seeded automatically on first startup.
 
 ### Buyer
 
@@ -143,6 +245,12 @@ Admin-role accounts are redirected to `/admin` on login. Only this role can acce
 | `POSTGRES_DB`         | `creditos`                                         |                                                    |
 | `JWT_SECRET`          | `change-me-in-production-use-secrets-token-hex-32` | Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `CORS_ORIGINS`        | `http://localhost:3000`                            | Comma-separated for multiple origins               |
+| `REDIS_URL`           | `redis://redis:6379/0`                             | Used for Celery, catalog cache, and rate limiting  |
+| `ACCESS_TOKEN_EXPIRES_MINUTES` | `30`                                    | JWT and cookie lifetime                            |
+| `LOGIN_RATE_LIMIT`    | `10/minute`                                        | slowapi format, per IP                             |
+| `CATALOG_CACHE_TTL_SECONDS` | `300`                                        | Redis TTL for package/feature catalog cache        |
+| `COOKIE_SECURE`       | `false`                                            | Set `true` in production (requires HTTPS)          |
+| `COOKIE_SAMESITE`     | `lax`                                              | `strict` recommended in production                 |
 | `SEED_ADMIN_EMAIL`    | `admin@creditos.app`                               | Override demo admin email                          |
 | `SEED_ADMIN_PASSWORD` | `credits123`                                       | Override demo admin password                       |
 | `SEED_USER_EMAIL`     | `buyer@acme.io`                                    | Override demo buyer email                          |
@@ -156,57 +264,58 @@ Admin-role accounts are redirected to `/admin` on login. Only this role can acce
 **Direct backend URL:** `http://localhost:8000/api/v1` (local dev only)  
 **Interactive docs (Swagger UI):** `http://localhost:8000/docs`
 
-All protected endpoints require `Authorization: Bearer <token>`.
+All protected endpoints require the `creditos_access_token` cookie (set automatically on login). State-changing endpoints also require the `X-CSRF-Token` header (value from the `creditos_csrf_token` cookie).
 
 ### Auth
 
-| Method | Path           | Auth | Description                                  |
-|--------|----------------|------|----------------------------------------------|
-| POST   | `/auth/signup` | —    | Register; returns `{ access_token, user }`   |
-| POST   | `/auth/login`  | —    | Authenticate; returns `{ access_token, user }` |
-| GET    | `/auth/me`     | JWT  | Current user profile                         |
+| Method | Path           | Auth | Description                                                          |
+|--------|----------------|------|----------------------------------------------------------------------|
+| POST   | `/auth/signup` | —    | Register; sets auth cookies; returns `{ csrf_token, user }`         |
+| POST   | `/auth/login`  | —    | Authenticate; sets auth cookies; returns `{ csrf_token, user }`     |
+| GET    | `/auth/me`     | Cookie | Current user profile                                               |
 
 ### Packages
 
 | Method | Path             | Auth        | Description                                      |
 |--------|------------------|-------------|--------------------------------------------------|
-| GET    | `/packages`      | JWT         | List active packages                             |
-| POST   | `/packages`      | JWT (admin) | Create package                                   |
-| PATCH  | `/packages/{id}` | JWT (admin) | Update package name, price, credits, features    |
-| DELETE | `/packages/{id}` | JWT (admin) | Soft-delete (sets `is_active = false`)           |
+| GET    | `/packages`      | Cookie      | List active packages (Redis-cached, Phase 2)     |
+| POST   | `/packages`      | Cookie + CSRF (admin) | Create package                        |
+| PATCH  | `/packages/{id}` | Cookie + CSRF (admin) | Update package                        |
+| DELETE | `/packages/{id}` | Cookie + CSRF (admin) | Soft-delete                           |
 
 ### Purchases
 
-| Method | Path         | Auth | Description                                                               |
-|--------|--------------|------|---------------------------------------------------------------------------|
-| POST   | `/purchases` | JWT  | Buy a package. Requires `Idempotency-Key` header (max 160 chars). Returns HTTP 201 on creation, HTTP 200 on replay. |
+| Method | Path                          | Auth         | Description                                                              |
+|--------|-------------------------------|--------------|--------------------------------------------------------------------------|
+| POST   | `/purchases`                  | Cookie + CSRF | Buy a package. Returns HTTP 202 (new) or HTTP 200 (replay). Requires `Idempotency-Key` header. |
+| GET    | `/purchases/{id}/status`      | Cookie       | Poll transaction status: `pending`, `processing`, `completed`, `failed` |
 
 ### Features
 
-| Method | Path                  | Auth | Description                                                      |
-|--------|-----------------------|------|------------------------------------------------------------------|
-| GET    | `/features`           | JWT  | All features with per-user `locked` / `unlocked` status          |
-| POST   | `/features/{key}/run` | JWT  | Run a feature and deduct credits. HTTP 402 = insufficient credits, HTTP 403 = feature locked |
+| Method | Path                  | Auth         | Description                                                      |
+|--------|-----------------------|--------------|------------------------------------------------------------------|
+| GET    | `/features`           | Cookie       | All features with per-user `locked` / `unlocked` status          |
+| POST   | `/features/{key}/run` | Cookie + CSRF | Run a feature and deduct credits. HTTP 402 = insufficient, HTTP 403 = locked |
 
 ### Wallet
 
-| Method | Path                | Auth | Description                                  |
-|--------|---------------------|------|----------------------------------------------|
-| GET    | `/wallet`           | JWT  | Current balance and list of unlocked features |
-| GET    | `/wallet/purchases` | JWT  | Purchase history                             |
-| GET    | `/wallet/ledger`    | JWT  | Full append-only credit ledger               |
+| Method | Path                | Auth   | Description                                  |
+|--------|---------------------|--------|----------------------------------------------|
+| GET    | `/wallet`           | Cookie | Current balance and list of unlocked features |
+| GET    | `/wallet/purchases` | Cookie | Purchase history                             |
+| GET    | `/wallet/ledger`    | Cookie | Full append-only credit ledger               |
 
 ### Health
 
 | Method | Path      | Auth | Description                              |
 |--------|-----------|------|------------------------------------------|
-| GET    | `/health` | —    | Returns `{"status":"ok"}` (root path — not under `/api/v1`) |
+| GET    | `/health` | —    | Returns `{"status":"ok"}`                |
 
 ---
 
 ## Running Tests
 
-### Backend — 80 pytest tests
+### Backend — 87 pytest tests
 
 ```bash
 cd backend
@@ -235,41 +344,31 @@ npx vitest run
 **`frontend/e2e/` — 15 tests** targeting the Vite dev server (`http://localhost:5173`):
 
 ```bash
-# Start the backend + dev server first
 cd frontend && npm run dev &
-
-# Then run:
 cd frontend
 npx playwright install --with-deps
 npx playwright test
 ```
 
-Spec files: `auth.spec.ts`, `dashboard.spec.ts`, `store.spec.ts`, `playground.spec.ts`, `admin.spec.ts`
-
 **`e2e/` — 11 tests** targeting the Docker Compose stack (`http://localhost:3000`):
 
 ```bash
 docker compose up --build -d
-
 cd e2e
 npm install
 npx playwright install --with-deps chromium
 npm test
 ```
 
-Spec files: `tests/auth-routing.spec.ts`, `tests/store-wallet-playground.spec.ts`, `tests/admin-packages.spec.ts`
-
-Override the target URL: `E2E_BASE_URL=http://your-host npm test`
-
 ### Test summary
 
 | Suite          | Count | Runner     |
 |----------------|-------|------------|
-| Backend        | 80    | pytest     |
+| Backend        | 87    | pytest     |
 | Frontend unit  | 12    | Vitest     |
 | Frontend e2e   | 15    | Playwright |
 | Standalone e2e | 11    | Playwright |
-| **Total**      | **118** |          |
+| **Total**      | **125** |          |
 
 ---
 
@@ -285,10 +384,14 @@ pip install -r requirements.txt
 
 export DATABASE_URL=postgresql+asyncpg://creditos:password@localhost:5432/creditos
 export JWT_SECRET=dev-secret
+export REDIS_URL=redis://localhost:6379/0
 
 alembic upgrade head
-python -m app.db.seed        # seed demo data
+python -m app.db.seed
 uvicorn app.main:app --reload --port 8000
+
+# In a second terminal — Celery worker
+celery -A app.worker.celery_app worker --loglevel=info
 ```
 
 ### Frontend
@@ -309,27 +412,30 @@ The Vite dev server proxies `/api/` → `http://localhost:8000/api/` (see `vite.
 .
 ├── backend/
 │   ├── app/
-│   │   ├── core/        # Config (pydantic-settings), JWT, security, error handlers
-│   │   ├── db/          # Async session factory, seed script
-│   │   ├── models/      # SQLAlchemy ORM models (User, Package, Feature, CreditLedger…)
-│   │   ├── routers/     # FastAPI route handlers (auth, packages, purchases, features, wallet)
+│   │   ├── core/        # Config, JWT, security, CSRF, cache, rate limiter
+│   │   ├── db/          # Session factory, seed script
+│   │   ├── models/      # SQLAlchemy ORM models
+│   │   ├── routers/     # FastAPI route handlers
 │   │   ├── schemas/     # Pydantic v2 request/response models
-│   │   └── services/    # Business logic (wallet ops, feature gating, idempotency)
+│   │   ├── services/    # Business logic
+│   │   └── worker/      # Celery app + tasks (Phase 2)
 │   ├── alembic/         # Database migration scripts
-│   ├── tests/           # pytest suite (80 tests)
-│   ├── Dockerfile
-│   └── entrypoint.sh    # Runs migrations + seed + uvicorn
+│   ├── tests/           # pytest suite (87 tests)
+│   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── api/         # Axios modules (one per domain: auth, packages, wallet…)
+│   │   ├── api/         # Axios modules + CSRF interceptor
 │   │   ├── components/  # Shared UI components
-│   │   ├── contexts/    # AuthContext (JWT state + user profile)
+│   │   ├── context/     # AuthContext (cookie-based session)
 │   │   ├── pages/       # Login, Signup, Dashboard, Store, Playground, Admin
 │   │   └── __tests__/   # Vitest unit tests
 │   ├── e2e/             # Playwright tests targeting the Vite dev server
 │   ├── nginx.conf       # Reverse-proxy + SPA fallback config
-│   └── Dockerfile       # Multi-stage: Vite build → Nginx serve
+│   └── Dockerfile
 ├── e2e/                 # Standalone Playwright tests targeting the Docker stack
+├── docs/
+│   ├── scaling-hardening-design.md   # Phase 2 design document
+│   └── scaling-hardening-plan.md     # Phase 2 implementation plan
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -345,28 +451,29 @@ Every balance change appends a new row to `credit_ledger` recording the delta, r
 
 ### Idempotent purchases
 
-`POST /purchases` requires an `Idempotency-Key` header stored with a unique-per-user constraint. A duplicate key replays the original response without creating a second charge. A concurrent duplicate that loses the race to the DB `INSERT` catches the `IntegrityError`, rolls back, and replays the original — making the endpoint safe under client retries and network timeouts.
+`POST /purchases` requires an `Idempotency-Key` header stored with a unique-per-user constraint. A duplicate key replays the original response without creating a second charge. In Phase 2, the async worker adds a second layer of idempotency: it checks `tx.status != "pending"` before applying credits, making it safe under Celery's at-least-once delivery.
+
+### httpOnly cookies over localStorage
+
+Phase 1 stored the JWT in `localStorage` for simplicity. Phase 2 moves to `httpOnly` cookies because any XSS that can read `localStorage` can silently exfiltrate auth tokens. `httpOnly` cookies are structurally inaccessible to JavaScript. The CSRF double-submit pattern is the standard companion: JS reads a non-httpOnly `creditos_csrf_token` cookie and sends it as a header; the server compares using `secrets.compare_digest`. A cross-origin attacker can neither read the cookie value nor forge the header.
 
 ### Feature gating at the service layer
 
-Lock/unlock state is derived at query time by joining `user_features` (what the user has purchased) with the `features` table — no materialised flag to get out of sync. The credit deduction and the feature-run record are written in the same database transaction, so a crash between them is impossible.
-
-### Credits cannot go negative
-
-The service checks `balance >= cost` before deducting. Failure returns HTTP 402 (`INSUFFICIENT_CREDITS`). If the feature is not unlocked at all the endpoint returns HTTP 403 (`FEATURE_LOCKED`).
+Lock/unlock state is derived at query time by joining `user_entitlements` with the `features` table — no materialised flag to get out of sync. The credit deduction and the feature-run record are written in the same database transaction.
 
 ### Soft deletes on packages
 
-Deleting a package sets `is_active = false` rather than removing the row. Historical purchase records keep their foreign-key reference valid. Both the buyer store and the admin catalog filter on `is_active = true`.
+Deleting a package sets `active = false` rather than removing the row. Historical purchase records keep their foreign-key reference valid.
 
 ---
 
 ## Known Limitations (by design)
 
-- **No real payments** — purchases accept any request and add credits directly.
+- **No real payments** — purchases accept any request and process credits directly.
 - **No email verification or password reset** — out of scope for a portfolio prototype.
 - **Google/OAuth buttons are non-functional UI placeholders** — no OAuth flow is wired.
 - **Mock AI features** — the four gated features return simulated output, not real AI calls.
+- **Phase 2 in progress** — Steps 4–7 (attack tests, catalog cache, async UI, load test) are not yet complete.
 
 ---
 
@@ -381,6 +488,12 @@ Run `docker compose logs backend`. Usually a migration error or Postgres not rea
 docker compose down -v && docker compose up --build
 ```
 
+**Worker not processing purchases**  
+Check `docker compose logs worker`. Redis must be healthy before the worker starts. Try:
+```bash
+docker compose restart worker
+```
+
 **Seed data missing after changing SEED_* vars**  
 The seed script is idempotent and skips existing rows. Wipe the volume so it re-seeds:
 ```bash
@@ -393,9 +506,6 @@ docker compose down -v && docker compose up --build
 docker run --rm -v "${PWD}/frontend:/app" -w /app node:20-alpine npm install
 ```
 then rebuild.
-
-**CORS errors in the browser console**  
-Ensure `CORS_ORIGINS` in `.env` includes the exact URL you're accessing the frontend from.
 
 ---
 
