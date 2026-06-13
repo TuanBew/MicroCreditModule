@@ -17,6 +17,12 @@ alembic upgrade head
 echo "Seeding demo data..."
 python -m app.db.seed
 
-# Start the application
+# If extra arguments were supplied (e.g. the celery command from docker-compose),
+# exec them directly. Otherwise default to the web server.
+if [ $# -gt 0 ]; then
+  echo "Starting: $*"
+  exec "$@"
+fi
+
 echo "Starting uvicorn..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000
