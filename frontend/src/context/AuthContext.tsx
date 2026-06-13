@@ -1,47 +1,54 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { AuthUser } from '../api/auth';
+import { getMe } from '../api/auth';
 
 interface AuthContextValue {
   user: AuthUser | null;
-  token: string | null;
-  login: (token: string, user: AuthUser) => void;
+  login: (user: AuthUser) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function loadFromStorage(): { user: AuthUser | null; token: string | null } {
+function loadUserFromStorage(): AuthUser | null {
   try {
-    const token = localStorage.getItem('creditos:token');
     const userRaw = localStorage.getItem('creditos:user');
-    const user = userRaw ? (JSON.parse(userRaw) as AuthUser) : null;
-    return { token, user };
+    return userRaw ? (JSON.parse(userRaw) as AuthUser) : null;
   } catch {
-    return { token: null, user: null };
+    return null;
   }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const stored = loadFromStorage();
-  const [token, setToken] = useState<string | null>(stored.token);
-  const [user, setUser] = useState<AuthUser | null>(stored.user);
+  const [user, setUser] = useState<AuthUser | null>(loadUserFromStorage);
 
-  const login = useCallback((newToken: string, newUser: AuthUser) => {
-    localStorage.setItem('creditos:token', newToken);
+  // On mount, validate session by calling /auth/me.
+  // If the cookie is valid the server returns the current user.
+  // If the call fails we leave the existing state untouched (graceful
+  // degradation: tests can seed localStorage without a real server).
+  useEffect(() => {
+    getMe()
+      .then((serverUser) => {
+        setUser(serverUser);
+        localStorage.setItem('creditos:user', JSON.stringify(serverUser));
+      })
+      .catch(() => {
+        // Server unreachable or cookie expired — keep whatever is in state
+      });
+  }, []);
+
+  const login = useCallback((newUser: AuthUser) => {
     localStorage.setItem('creditos:user', JSON.stringify(newUser));
-    setToken(newToken);
     setUser(newUser);
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem('creditos:token');
     localStorage.removeItem('creditos:user');
-    setToken(null);
     setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

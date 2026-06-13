@@ -1,9 +1,11 @@
+import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppShell } from '../components/AppShell';
 import { listPackages } from '../api/packages';
 import type { Package } from '../api/packages';
 import { createPurchase } from '../api/purchases';
+import { usePurchasePoller } from '../hooks/usePurchasePoller';
 import { getWallet } from '../api/wallet';
 import { useToast } from '../components/Toast';
 
@@ -24,9 +26,10 @@ export function Store() {
   // Modal state
   const [selectedPkg, setSelectedPkg] = useState<Package | null>(null);
   const [purchasing, setPurchasing] = useState(false);
-  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState('');
-  const [newBalance, setNewBalance] = useState<number | null>(null);
+
+  // Async purchase polling
+  const poller = usePurchasePoller();
 
   useEffect(() => {
     async function load() {
@@ -46,16 +49,31 @@ export function Store() {
     void load();
   }, []);
 
+  useEffect(() => {
+    if (poller.state === 'completed' && poller.status) {
+      const { balance: newBal, entitlements } = poller.status;
+      if (newBal !== undefined) setBalance(newBal);
+      if (entitlements) setOwnedFeatures(entitlements);
+      if (selectedPkg) {
+        showToast(`${selectedPkg.name} purchased. Balance updated.`, 'success');
+      }
+    }
+  }, [poller.state, poller.status, selectedPkg, showToast]);
+
+  useEffect(() => {
+    return () => { poller.reset(); };
+  }, [poller.reset]);
+
   function openModal(pkg: Package) {
     setSelectedPkg(pkg);
-    setPurchaseSuccess(null);
     setPurchaseError('');
-    setNewBalance(null);
+    poller.reset();
     document.body.classList.add('modal-open');
   }
 
   function closeModal() {
     setSelectedPkg(null);
+    poller.reset();
     document.body.classList.remove('modal-open');
   }
 
@@ -64,16 +82,12 @@ export function Store() {
     setPurchasing(true);
     setPurchaseError('');
     try {
-      const result = await createPurchase(selectedPkg.id);
-      setNewBalance(result.balance);
-      setBalance(result.balance);
-      setOwnedFeatures(result.entitlements);
-      setPurchaseSuccess(`New balance: ${credits(result.balance)} credits. ${selectedPkg.name} entitlements are now active forever.`);
-      showToast(`${selectedPkg.name} purchased. Balance updated.`, 'success');
+      const accepted = await createPurchase(selectedPkg.id);
+      setPurchasing(false);
+      poller.start(accepted.transaction_id);
     } catch (err: unknown) {
-      const apiErr = err as { response?: { data?: { message?: string } } };
-      setPurchaseError(apiErr?.response?.data?.message ?? 'Purchase failed. Please try again.');
-    } finally {
+      const message = axios.isAxiosError(err) ? err.response?.data?.message : undefined;
+      setPurchaseError(message ?? 'Purchase failed. Please try again.');
       setPurchasing(false);
     }
   }
@@ -201,26 +215,40 @@ export function Store() {
                     className="btn"
                     type="button"
                     onClick={handlePurchase}
-                    disabled={purchasing || purchaseSuccess !== null}
+                    disabled={purchasing || poller.state !== 'idle'}
                   >
                     {purchasing ? <><span className="spinner" /> Processing</> : `Pay ${money(selectedPkg.price_cents)}`}
                   </button>
                 </div>
-                {purchaseSuccess && (
+
+                {/* Processing state */}
+                {poller.state === 'polling' && (
+                  <div className="purchase-processing">
+                    <p><span className="spinner" /> Processing your purchase...</p>
+                  </div>
+                )}
+
+                {/* Success state */}
+                {poller.state === 'completed' && poller.status && (
                   <div className="success-state is-visible">
                     <h3>Purchase complete.</h3>
-                    <p>{purchaseSuccess}</p>
+                    {poller.status.balance !== undefined && (
+                      <p>New balance: {credits(poller.status.balance)} credits</p>
+                    )}
                     <p>
                       <Link to="/playground" onClick={closeModal}>Go to Playground</Link>
                       {' · '}
                       <Link to="/dashboard" onClick={closeModal}>View Wallet</Link>
                     </p>
-                    {newBalance !== null && (
-                      <p className="muted">Balance updated to {credits(newBalance)} credits.</p>
-                    )}
                   </div>
                 )}
-                {purchaseError && <p className="inline-error">{purchaseError}</p>}
+
+                {/* Failed/error state */}
+                {(purchaseError || poller.state === 'failed') && (
+                  <p className="inline-error" role="alert">
+                    {purchaseError || poller.status?.failure_reason || 'Purchase failed. Please try again.'}
+                  </p>
+                )}
               </div>
             </div>
           </section>

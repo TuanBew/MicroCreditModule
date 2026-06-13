@@ -25,3 +25,21 @@ class PurchaseResponse(BaseModel):
     balance: int
     newly_unlocked: list[str]
     entitlements: list[str]
+
+
+# --- Async purchase shapes ---
+
+class PurchaseAccepted(BaseModel):
+    """Returned immediately (HTTP 202) when the purchase is enqueued."""
+    transaction_id: UUID
+    status: str  # always "pending" at creation time
+
+
+class TransactionStatusResponse(BaseModel):
+    """Returned by GET /purchases/{id}/status."""
+    transaction_id: UUID
+    status: str  # pending | processing | completed | failed
+    balance: int | None = None
+    newly_unlocked: list[str] | None = None
+    entitlements: list[str] | None = None
+    failure_reason: str | None = None

@@ -170,3 +170,96 @@ def purchase_package(
         ),
         created=True,
     )
+
+
+def initiate_purchase(
+    db: Session,
+    user: User,
+    payload: PurchaseRequest,
+    idempotency_key: str,
+) -> tuple["PurchaseAccepted", bool]:
+    """
+    Validate request, check for replay, write a pending transaction.
+    Returns (PurchaseAccepted, is_new). is_new=False means idempotent replay.
+    """
+    from app.schemas.purchase import PurchaseAccepted
+
+    replayed = _replay_purchase(db, user.id, payload, idempotency_key)
+    if replayed is not None:
+        tx = db.execute(
+            select(Transaction).where(
+                Transaction.user_id == user.id,
+                Transaction.idempotency_key == idempotency_key,
+            )
+        ).scalar_one()
+        return PurchaseAccepted(transaction_id=tx.id, status=tx.status), False
+
+    package = _load_package(db, payload.package_id)
+    transaction = Transaction(
+        user_id=user.id,
+        package_id=package.id,
+        idempotency_key=idempotency_key,
+        request_fingerprint=_fingerprint(package.id),
+        status="pending",
+        amount_cents=package.price_cents,
+        credits_granted=package.credits,
+    )
+    db.add(transaction)
+    try:
+        db.flush()
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        replayed = _replay_purchase(db, user.id, payload, idempotency_key)
+        if replayed is not None:
+            tx = db.execute(
+                select(Transaction).where(
+                    Transaction.user_id == user.id,
+                    Transaction.idempotency_key == idempotency_key,
+                )
+            ).scalar_one()
+            return PurchaseAccepted(transaction_id=tx.id, status=tx.status), False
+        raise api_error(
+            409,
+            "IDEMPOTENCY_KEY_CONFLICT",
+            "Idempotency key was already used for a conflicting purchase.",
+        )
+
+    return PurchaseAccepted(transaction_id=transaction.id, status="pending"), True
+
+
+def get_transaction_status(
+    db: Session,
+    user_id: UUID,
+    transaction_id: UUID,
+) -> "TransactionStatusResponse":
+    """Load a transaction owned by user_id and return its current status."""
+    from app.schemas.purchase import TransactionStatusResponse
+
+    tx = db.execute(
+        select(Transaction)
+        .options(selectinload(Transaction.package))
+        .where(Transaction.id == transaction_id, Transaction.user_id == user_id)
+    ).scalar_one_or_none()
+
+    if tx is None:
+        raise api_error(404, "TRANSACTION_NOT_FOUND", "Transaction not found.")
+
+    if tx.status == "completed":
+        wallet = db.get(UserCredit, user_id)
+        return TransactionStatusResponse(
+            transaction_id=tx.id,
+            status="completed",
+            balance=wallet.balance if wallet else 0,
+            newly_unlocked=[],
+            entitlements=_entitlement_keys(db, user_id),
+        )
+
+    if tx.status == "failed":
+        return TransactionStatusResponse(
+            transaction_id=tx.id,
+            status="failed",
+            failure_reason=tx.failure_reason,
+        )
+
+    return TransactionStatusResponse(transaction_id=tx.id, status=tx.status)

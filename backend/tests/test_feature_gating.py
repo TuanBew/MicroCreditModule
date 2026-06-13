@@ -83,6 +83,11 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 
+_CSRF_TOKEN = "test-csrf-token-for-feature-gating"
+_CSRF_HEADERS = {"X-CSRF-Token": _CSRF_TOKEN}
+_CSRF_COOKIES = {"creditos_csrf_token": _CSRF_TOKEN}
+
+
 def _auth_header(user: User) -> dict[str, str]:
     token = create_access_token(
         subject=str(user.id),
@@ -90,6 +95,10 @@ def _auth_header(user: User) -> dict[str, str]:
         role=user.role,
     )
     return {"Authorization": f"Bearer {token}"}
+
+
+def _auth_csrf_headers(user: User) -> dict[str, str]:
+    return {**_auth_header(user), **_CSRF_HEADERS}
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +405,8 @@ def test_admin_cannot_run_feature(client: TestClient, db_session: Session) -> No
     response = client.post(
         "/api/v1/features/image-generation/run",
         json={"input_payload": {}},
-        headers=_auth_header(admin),
+        headers=_auth_csrf_headers(admin),
+        cookies=_CSRF_COOKIES,
     )
 
     assert response.status_code == 403
@@ -414,7 +424,8 @@ def test_http_run_feature_success(client: TestClient, db_session: Session) -> No
     response = client.post(
         "/api/v1/features/image-generation/run",
         json={"input_payload": {}},
-        headers=_auth_header(user),
+        headers=_auth_csrf_headers(user),
+        cookies=_CSRF_COOKIES,
     )
 
     assert response.status_code == 201
@@ -436,7 +447,8 @@ def test_http_run_feature_not_found(client: TestClient, db_session: Session) -> 
     response = client.post(
         "/api/v1/features/nonexistent/run",
         json={"input_payload": {}},
-        headers=_auth_header(user),
+        headers=_auth_csrf_headers(user),
+        cookies=_CSRF_COOKIES,
     )
 
     assert response.status_code == 404
@@ -453,7 +465,8 @@ def test_http_run_feature_locked(client: TestClient, db_session: Session) -> Non
     response = client.post(
         "/api/v1/features/audience-insights/run",
         json={"input_payload": {}},
-        headers=_auth_header(user),
+        headers=_auth_csrf_headers(user),
+        cookies=_CSRF_COOKIES,
     )
 
     assert response.status_code == 403
@@ -471,7 +484,8 @@ def test_http_run_feature_insufficient_credits(client: TestClient, db_session: S
     response = client.post(
         "/api/v1/features/image-generation/run",
         json={"input_payload": {}},
-        headers=_auth_header(user),
+        headers=_auth_csrf_headers(user),
+        cookies=_CSRF_COOKIES,
     )
 
     assert response.status_code == 402

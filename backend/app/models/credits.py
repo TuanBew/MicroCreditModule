@@ -26,9 +26,11 @@ class Transaction(Base):
     )
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
-    status: Mapped[str] = mapped_column(String(40), nullable=False, default="completed")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="pending")
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     credits_granted: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
     user: Mapped["User"] = relationship(back_populates="transactions")
