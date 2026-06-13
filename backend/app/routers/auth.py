@@ -59,6 +59,23 @@ async def login(
     return token_response
 
 
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(response: Response) -> None:
+    settings = get_settings()
+    response.delete_cookie(
+        "creditos_access_token",
+        httponly=True,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
+    response.delete_cookie(
+        "creditos_csrf_token",
+        httponly=False,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
+
+
 @router.get("/me", response_model=UserRead)
 def me(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     return current_user

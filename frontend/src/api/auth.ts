@@ -27,3 +27,7 @@ export async function getMe(): Promise<AuthUser> {
   const res = await client.get<AuthUser>('/api/v1/auth/me');
   return res.data;
 }
+
+export async function logoutApi(): Promise<void> {
+  await client.post('/api/v1/auth/logout');
+}

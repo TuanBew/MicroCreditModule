@@ -26,9 +26,11 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (r) => r,
   (error) => {
-    // Skip redirect for /auth/me — AuthContext handles that 401 gracefully
+    // /auth/me 401 → AuthContext handles gracefully (no redirect)
+    // /auth/login 401 → Login form's catch block shows the error (no redirect)
     const url: string = error.config?.url ?? '';
-    if (error.response?.status === 401 && !url.includes('/auth/me')) {
+    const isAuthFlow = url.includes('/auth/me') || url.includes('/auth/login');
+    if (error.response?.status === 401 && !isAuthFlow) {
       window.location.href = '/login';
     }
     return Promise.reject(error);

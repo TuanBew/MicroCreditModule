@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { AuthUser } from '../api/auth';
-import { getMe } from '../api/auth';
+import { getMe, logoutApi } from '../api/auth';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -48,6 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Best-effort server-side cookie clear; local state clears immediately.
+    logoutApi().catch(() => {});
     localStorage.removeItem('creditos:user');
     setUser(null);
   }, []);
