@@ -361,43 +361,7 @@ Deleting a package sets `is_active = false` rather than removing the row. Histor
 
 ---
 
-## Known Limitations (by design)
 
-- **No real payments** — purchases accept any request and add credits directly.
-- **No email verification or password reset** — out of scope for a portfolio prototype.
-- **Google/OAuth buttons are non-functional UI placeholders** — no OAuth flow is wired.
-- **Mock AI features** — the four gated features return simulated output, not real AI calls.
-
----
-
-## Troubleshooting
-
-**Port 3000 already in use**  
-Change the published port in `docker-compose.yml`: `"3001:80"`, then open `http://localhost:3001`.
-
-**Backend exits immediately on startup**  
-Run `docker compose logs backend`. Usually a migration error or Postgres not ready yet. Try:
-```bash
-docker compose down -v && docker compose up --build
-```
-
-**Seed data missing after changing SEED_* vars**  
-The seed script is idempotent and skips existing rows. Wipe the volume so it re-seeds:
-```bash
-docker compose down -v && docker compose up --build
-```
-
-**`npm ci` fails during Docker build**  
-`package-lock.json` must be generated on Linux. If you regenerated it on Windows, run:
-```bash
-docker run --rm -v "${PWD}/frontend:/app" -w /app node:20-alpine npm install
-```
-then rebuild.
-
-**CORS errors in the browser console**  
-Ensure `CORS_ORIGINS` in `.env` includes the exact URL you're accessing the frontend from.
-
----
 
 ## License
 
