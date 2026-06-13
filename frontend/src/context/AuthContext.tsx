@@ -23,17 +23,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadUserFromStorage);
 
   // On mount, validate session by calling /auth/me.
-  // If the cookie is valid the server returns the current user.
-  // If the call fails we leave the existing state untouched (graceful
-  // degradation: tests can seed localStorage without a real server).
+  // 401 = cookie definitively expired/invalid → clear stale local state so
+  // ProtectedRoute redirects to /login instead of rendering protected pages
+  // with a user that the server won't accept.
+  // Network errors leave state intact (graceful degradation for offline/tests).
   useEffect(() => {
     getMe()
       .then((serverUser) => {
         setUser(serverUser);
         localStorage.setItem('creditos:user', JSON.stringify(serverUser));
       })
-      .catch(() => {
-        // Server unreachable or cookie expired — keep whatever is in state
+      .catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 401) {
+          localStorage.removeItem('creditos:user');
+          setUser(null);
+        }
       });
   }, []);
 
