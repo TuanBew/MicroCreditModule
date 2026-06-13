@@ -11,6 +11,7 @@ def make_limiter() -> Limiter:
             key_func=get_remote_address,
             storage_uri=settings.redis_url,
             default_limits=[],
+            in_memory_fallback_enabled=True,
         )
     except Exception:
         return Limiter(key_func=get_remote_address, default_limits=[])

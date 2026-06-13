@@ -1,10 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.deps import get_current_user, get_db
+from app.core.rate_limit import limiter
 from app.models import User
 from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse, UserRead
 from app.services.auth_service import login as login_user
@@ -46,12 +47,14 @@ def signup(
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(
-    request: LoginRequest,
+@limiter.limit(get_settings().login_rate_limit)
+async def login(
+    request: Request,
+    payload: LoginRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
 ) -> TokenResponse:
-    token_response = login_user(db, request)
+    token_response = login_user(db, payload)
     _set_auth_cookies(response, token_response)
     return token_response
 
