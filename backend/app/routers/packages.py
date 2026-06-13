@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.csrf import verify_csrf
 from app.core.deps import get_current_user, get_db, require_admin
 from app.models import User
 from app.schemas.catalog import PackageCreate, PackageRead, PackageUpdate
@@ -26,7 +27,7 @@ def index(
     return list_packages(db, current_user)
 
 
-@router.post("", response_model=PackageRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PackageRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(verify_csrf)])
 def create(
     payload: PackageCreate,
     db: Annotated[Session, Depends(get_db)],
@@ -35,7 +36,7 @@ def create(
     return create_package(db, payload)
 
 
-@router.patch("/{package_id}", response_model=PackageRead)
+@router.patch("/{package_id}", response_model=PackageRead, dependencies=[Depends(verify_csrf)])
 def patch(
     package_id: UUID,
     payload: PackageUpdate,
@@ -45,7 +46,7 @@ def patch(
     return update_package(db, package_id, payload)
 
 
-@router.delete("/{package_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{package_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(verify_csrf)])
 def delete(
     package_id: UUID,
     db: Annotated[Session, Depends(get_db)],

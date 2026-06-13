@@ -3,8 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 import jwt
-from fastapi import Depends
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Cookie, Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
@@ -13,13 +12,18 @@ from app.db.session import get_db
 from app.models import Feature, User, UserEntitlement
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
-
-
 def get_current_user(
-    token: Annotated[str | None, Depends(oauth2_scheme)],
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+    creditos_access_token: Annotated[str | None, Cookie()] = None,
 ) -> User:
+    # Primary: httpOnly cookie
+    token: str | None = creditos_access_token
+    # Fallback: Authorization: Bearer <token> header (backward compat for tests)
+    if token is None and authorization is not None:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:]
     if token is None:
         raise api_error(401, "INVALID_TOKEN", "Authentication token is required.")
 

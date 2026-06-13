@@ -43,8 +43,17 @@ def _create_user_token(db: Session, email: str, role: str = "user") -> tuple[Use
     return user, create_access_token(subject=str(user.id), email=user.email, role=user.role)
 
 
+_CSRF_TOKEN = "test-csrf-token-for-purchase-ledger"
+_CSRF_HEADERS = {"X-CSRF-Token": _CSRF_TOKEN}
+_CSRF_COOKIES = {"creditos_csrf_token": _CSRF_TOKEN}
+
+
 def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _auth_csrf_headers(token: str) -> dict[str, str]:
+    return {**_auth_header(token), **_CSRF_HEADERS}
 
 
 def _package_by_slug(db: Session, slug: str) -> Package:
@@ -245,7 +254,8 @@ def test_missing_idempotency_key_returns_required_error(
 
     response = client.post(
         "/api/v1/purchases",
-        headers=_auth_header(token),
+        headers=_auth_csrf_headers(token),
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -263,7 +273,8 @@ def test_oversized_idempotency_key_returns_validation_error(
 
     response = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "k" * 161},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "k" * 161},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -278,7 +289,8 @@ def test_active_package_purchase_returns_202(client: TestClient, db_session: Ses
 
     response = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "purchase-active-1"},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "purchase-active-1"},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -296,7 +308,8 @@ def test_inactive_package_purchase_returns_conflict(client: TestClient, db_sessi
 
     response = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "purchase-inactive-1"},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "purchase-inactive-1"},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -314,7 +327,8 @@ def test_purchase_writes_transaction_and_one_positive_ledger_row(
 
     response = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "purchase-ledger-1"},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "purchase-ledger-1"},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -346,7 +360,8 @@ def test_purchase_grants_missing_entitlements(client: TestClient, db_session: Se
 
     response = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "purchase-entitlements-1"},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "purchase-entitlements-1"},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -374,12 +389,14 @@ def test_repurchase_adds_credits_without_duplicate_entitlements(
 
     first = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "repurchase-1"},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "repurchase-1"},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
     second = client.post(
         "/api/v1/purchases",
-        headers={**_auth_header(token), "Idempotency-Key": "repurchase-2"},
+        headers={**_auth_csrf_headers(token), "Idempotency-Key": "repurchase-2"},
+        cookies=_CSRF_COOKIES,
         json={"package_id": str(package.id)},
     )
 
@@ -450,11 +467,11 @@ def test_router_uses_service_replay_status_even_without_precheck(
     seed_database(db_session)
     _user, token = _create_user_token(db_session, "service-replay-buyer@example.com")
     package = _package_by_slug(db_session, "starter")
-    headers = {**_auth_header(token), "Idempotency-Key": "service-replayed-key"}
+    headers = {**_auth_csrf_headers(token), "Idempotency-Key": "service-replayed-key"}
     payload = {"package_id": str(package.id)}
 
-    first = client.post("/api/v1/purchases", headers=headers, json=payload)
-    second = client.post("/api/v1/purchases", headers=headers, json=payload)
+    first = client.post("/api/v1/purchases", headers=headers, cookies=_CSRF_COOKIES, json=payload)
+    second = client.post("/api/v1/purchases", headers=headers, cookies=_CSRF_COOKIES, json=payload)
 
     assert first.status_code == 202
     assert second.status_code == 200
@@ -468,16 +485,16 @@ def test_replay_same_key_and_package_returns_200_without_new_transaction_or_ledg
     seed_database(db_session)
     user, token = _create_user_token(db_session, "replay-buyer@example.com")
     package = _package_by_slug(db_session, "starter")
-    headers = {**_auth_header(token), "Idempotency-Key": "replay-key"}
+    headers = {**_auth_csrf_headers(token), "Idempotency-Key": "replay-key"}
     payload = {"package_id": str(package.id)}
 
-    first = client.post("/api/v1/purchases", headers=headers, json=payload)
+    first = client.post("/api/v1/purchases", headers=headers, cookies=_CSRF_COOKIES, json=payload)
     assert first.status_code == 202
     transaction_id = UUID(first.json()["transaction_id"])
 
     _apply_purchase_in_worker(db_session, transaction_id)
 
-    second = client.post("/api/v1/purchases", headers=headers, json=payload)
+    second = client.post("/api/v1/purchases", headers=headers, cookies=_CSRF_COOKIES, json=payload)
 
     assert second.status_code == 200
     assert second.json()["transaction_id"] == str(transaction_id)
@@ -493,10 +510,10 @@ def test_same_idempotency_key_with_different_package_returns_conflict(
     _user, token = _create_user_token(db_session, "conflict-buyer@example.com")
     starter = _package_by_slug(db_session, "starter")
     creator = _package_by_slug(db_session, "creator")
-    headers = {**_auth_header(token), "Idempotency-Key": "conflict-key"}
+    headers = {**_auth_csrf_headers(token), "Idempotency-Key": "conflict-key"}
 
-    first = client.post("/api/v1/purchases", headers=headers, json={"package_id": str(starter.id)})
-    second = client.post("/api/v1/purchases", headers=headers, json={"package_id": str(creator.id)})
+    first = client.post("/api/v1/purchases", headers=headers, cookies=_CSRF_COOKIES, json={"package_id": str(starter.id)})
+    second = client.post("/api/v1/purchases", headers=headers, cookies=_CSRF_COOKIES, json={"package_id": str(creator.id)})
 
     assert first.status_code == 202
     assert second.status_code == 409

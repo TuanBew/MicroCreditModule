@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import api_error
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import create_auth_result, hash_password, verify_password
 from app.models import User, UserCredit
 from app.schemas.auth import LoginRequest, SignupRequest, TokenResponse
 
@@ -19,8 +19,10 @@ def derive_initials(email: str) -> str:
 
 
 def _token_response(user: User) -> TokenResponse:
+    result = create_auth_result(user)
     return TokenResponse(
-        access_token=create_access_token(str(user.id), user.email, user.role),
+        access_token=result.access_token,
+        csrf_token=result.csrf_token,
         user=user,
     )
 

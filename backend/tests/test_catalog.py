@@ -40,8 +40,17 @@ def _create_user_token(db: Session, email: str, role: str = "user") -> str:
     return create_access_token(subject=str(user.id), email=user.email, role=user.role)
 
 
+_CSRF_TOKEN = "test-csrf-catalog"
+_CSRF_COOKIES = {"creditos_csrf_token": _CSRF_TOKEN}
+_CSRF_HEADER = {"X-CSRF-Token": _CSRF_TOKEN}
+
+
 def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _auth_csrf_headers(token: str) -> dict[str, str]:
+    return {**_auth_header(token), **_CSRF_HEADER}
 
 
 def _package_by_slug(db: Session, slug: str) -> Package:
@@ -115,7 +124,8 @@ def test_admin_can_create_package(client: TestClient, db_session: Session) -> No
 
     response = client.post(
         "/api/v1/packages",
-        headers=_auth_header(admin_token),
+        headers=_auth_csrf_headers(admin_token),
+        cookies=_CSRF_COOKIES,
         json={
             "slug": "agency",
             "name": "Agency Pack",
@@ -151,7 +161,8 @@ def test_admin_can_patch_package_fields_and_feature_assignments(
 
     response = client.patch(
         f"/api/v1/packages/{package.id}",
-        headers=_auth_header(admin_token),
+        headers=_auth_csrf_headers(admin_token),
+        cookies=_CSRF_COOKIES,
         json={
             "name": "Starter Plus",
             "badge": "Updated",
@@ -180,7 +191,11 @@ def test_admin_delete_deactivates_package(client: TestClient, db_session: Sessio
     package = _package_by_slug(db_session, "starter")
     admin_token = _create_user_token(db_session, "delete-admin@example.com", role="admin")
 
-    response = client.delete(f"/api/v1/packages/{package.id}", headers=_auth_header(admin_token))
+    response = client.delete(
+        f"/api/v1/packages/{package.id}",
+        headers=_auth_csrf_headers(admin_token),
+        cookies=_CSRF_COOKIES,
+    )
 
     assert response.status_code == 204
     assert package.active is False
@@ -204,7 +219,7 @@ def test_buyer_cannot_create_patch_or_delete_packages(
     package = _package_by_slug(db_session, "starter")
     buyer_token = _create_user_token(db_session, f"{method}-buyer@example.com")
     url = path.format(package_id=package.id)
-    kwargs = {"headers": _auth_header(buyer_token)}
+    kwargs: dict = {"headers": _auth_csrf_headers(buyer_token), "cookies": _CSRF_COOKIES}
     if method in {"post", "patch"}:
         kwargs["json"] = {
             "slug": "blocked",
@@ -243,7 +258,8 @@ def test_admin_package_patch_validation_rejects_invalid_values(
 
     response = client.patch(
         f"/api/v1/packages/{package.id}",
-        headers=_auth_header(admin_token),
+        headers=_auth_csrf_headers(admin_token),
+        cookies=_CSRF_COOKIES,
         json=payload,
     )
 
@@ -260,7 +276,8 @@ def test_admin_package_create_validation_rejects_unknown_features(
 
     response = client.post(
         "/api/v1/packages",
-        headers=_auth_header(admin_token),
+        headers=_auth_csrf_headers(admin_token),
+        cookies=_CSRF_COOKIES,
         json={
             "slug": "unknown-feature-pack",
             "name": "Unknown Feature Pack",

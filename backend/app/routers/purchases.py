@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.csrf import verify_csrf
 from app.core.deps import get_db, require_buyer
 from app.core.errors import api_error
 from app.models import User
@@ -15,7 +16,7 @@ from app.worker.tasks import process_purchase
 router = APIRouter(tags=["purchases"])
 
 
-@router.post("", response_model=PurchaseAccepted, status_code=status.HTTP_202_ACCEPTED)
+@router.post("", response_model=PurchaseAccepted, status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_csrf)])
 def create(
     payload: PurchaseRequest,
     db: Annotated[Session, Depends(get_db)],
