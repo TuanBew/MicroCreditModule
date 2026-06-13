@@ -79,7 +79,7 @@ All services share a Docker Compose network (`creditos`). Only Nginx publishes a
 
 ## Phase 2: Scaling & Security Hardening
 
-Phase 1 shipped a complete, working application. Phase 2 is about making it defensible and scalable — closing the gap between "it works in a demo" and "it holds up under real conditions."
+Phase 1 shipped a complete, working application. Phase 2 is about making it defensible and scalable.
 
 ### What problems this solves
 
