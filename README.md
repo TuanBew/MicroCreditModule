@@ -78,10 +78,10 @@ All three services share a Docker Compose network (`creditos`). Only Nginx publi
 
 ```bash
 # 1. Clone
-git clone <repo-url>
+git clone https://github.com/TuanBew/MicroCreditModule
 cd CreditModule
 
-# 2. Create your .env (all defaults work for local)
+# 2. Create your .env 
 cp .env.example .env
 
 # 3. Start everything
