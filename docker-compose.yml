@@ -17,6 +17,17 @@ services:
       retries: 5
       start_period: 10s
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - creditos
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -26,14 +37,42 @@ services:
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS}
-      # Demo-only credentials — intentionally public for portfolio review.
-      # Override via .env for any non-throwaway deployment.
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      ACCESS_TOKEN_EXPIRES_MINUTES: "${ACCESS_TOKEN_EXPIRES_MINUTES:-30}"
+      LOGIN_RATE_LIMIT: "${LOGIN_RATE_LIMIT:-10/minute}"
+      CATALOG_CACHE_TTL_SECONDS: "${CATALOG_CACHE_TTL_SECONDS:-300}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      COOKIE_SAMESITE: "${COOKIE_SAMESITE:-lax}"
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@creditos.app}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-credits123}
       SEED_USER_EMAIL: ${SEED_USER_EMAIL:-buyer@acme.io}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-credits123}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - creditos
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - creditos
