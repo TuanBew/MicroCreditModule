@@ -162,10 +162,10 @@ The worker is safe to run twice: if a task is retried by Celery's at-least-once 
 | **Step 1** — Infrastructure | Redis + Celery worker added to Docker Compose; Alembic migration for transaction status lifecycle (`pending → processing → completed / failed`); config, cache module, Celery app | ✅ Done |
 | **Step 2** — Async purchase flow | `POST /purchases` → 202; idempotent Celery worker; `GET /purchases/{id}/status` endpoint; updated tests | ✅ Done |
 | **Step 3** — Auth hardening | httpOnly cookie auth; CSRF double-submit on all state-changing endpoints; login rate limiting; frontend drops localStorage, adds CSRF interceptor | ✅ Done |
-| **Step 4** — Attack tests | Failing tests that prove: IDOR blocked, tampered prices rejected, mass assignment rejected, overspend blocked, JWT tampering rejected, CSRF bypass blocked | 🔜 Upcoming |
-| **Step 5** — Catalog caching | Redis cache on `GET /packages` and `GET /features`; invalidated on admin writes | 🔜 Upcoming |
-| **Step 6** — Async store UI | `usePurchasePoller` hook; Store modal transitions: idle → submitting → processing → success / failed | 🔜 Upcoming |
-| **Step 7** — Load test | Locust concurrent-buyer simulation (50 users); correctness validator checking ledger integrity and no negative balances | 🔜 Upcoming |
+| **Step 4** — Attack tests | 13 pytest tests proving server-side enforcement: IDOR blocked, tampered prices rejected, mass assignment rejected, overspend blocked, JWT tampering rejected, CSRF bypass blocked | ✅ Done |
+| **Step 5** — Catalog caching | Redis cache on `GET /packages` for buyer path; invalidated on admin POST/PATCH/DELETE; 6 cache-behaviour tests | ✅ Done |
+| **Step 6** — Async store UI | `usePurchasePoller` hook (1.5 s poll, 60 s timeout, abort guard); Store modal transitions: idle → processing → success / failed | ✅ Done |
+| **Step 7** — Load test | Locust concurrent-buyer simulation (50 users, `browse_packages` + `buy_package` tasks); correctness validator verifying no negative balances and no double-credits | ✅ Done |
 
 ---
 
@@ -360,15 +360,57 @@ npx playwright install --with-deps chromium
 npm test
 ```
 
+### Load test (Locust)
+
+Simulates 50 concurrent buyers: 75% catalog browsing, 25% full purchase + poll cycle.
+
+```bash
+# 1. Install dependencies
+pip install -r loadtest/requirements.txt
+
+# 2. Seed a load-test user in the running database
+docker compose exec backend python -c "
+from app.db.session import SessionLocal
+from app.services.auth_service import signup
+from app.schemas.auth import SignupRequest
+db = SessionLocal()
+signup(db, SignupRequest(email='loadtest@example.com', password='LoadTest123!'))
+db.close()
+print('done')
+"
+
+# 3. Look up the starter package ID
+docker compose exec backend python -c "
+from app.db.session import SessionLocal
+from app.models import Package
+db = SessionLocal()
+pkg = db.query(Package).filter_by(slug='starter').first()
+print(pkg.id)
+db.close()
+"
+
+# 4. Run the load test (replace <uuid> with the id from step 3)
+export LOADTEST_PACKAGE_ID=<uuid>
+locust -f loadtest/locustfile.py \
+  --host http://localhost:3000 \
+  --users 50 --spawn-rate 5 --run-time 2m --headless
+
+# 5. Validate correctness after the run
+export DATABASE_URL=postgresql://creditos:change-me-in-production@localhost:5432/creditos
+python loadtest/validate.py
+```
+
+Expected output from `validate.py`: `PASS: no correctness violations found`
+
 ### Test summary
 
 | Suite          | Count | Runner     |
 |----------------|-------|------------|
-| Backend        | 87    | pytest     |
+| Backend        | 106   | pytest     |
 | Frontend unit  | 12    | Vitest     |
 | Frontend e2e   | 15    | Playwright |
 | Standalone e2e | 11    | Playwright |
-| **Total**      | **125** |          |
+| **Total**      | **144** |          |
 
 ---
 
@@ -433,9 +475,14 @@ The Vite dev server proxies `/api/` → `http://localhost:8000/api/` (see `vite.
 │   ├── nginx.conf       # Reverse-proxy + SPA fallback config
 │   └── Dockerfile
 ├── e2e/                 # Standalone Playwright tests targeting the Docker stack
+├── loadtest/
+│   ├── locustfile.py    # Locust concurrent-buyer simulation
+│   ├── validate.py      # Post-run correctness validator (checks ledger integrity)
+│   └── requirements.txt
 ├── docs/
 │   ├── scaling-hardening-design.md   # Phase 2 design document
-│   └── scaling-hardening-plan.md     # Phase 2 implementation plan
+│   ├── scaling-hardening-plan.md     # Phase 2 implementation plan
+│   └── tier3-followup.md             # Production hardening items out of scope for this prototype
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -473,7 +520,7 @@ Deleting a package sets `active = false` rather than removing the row. Historica
 - **No email verification or password reset** — out of scope for a portfolio prototype.
 - **Google/OAuth buttons are non-functional UI placeholders** — no OAuth flow is wired.
 - **Mock AI features** — the four gated features return simulated output, not real AI calls.
-- **Phase 2 in progress** — Steps 4–7 (attack tests, catalog cache, async UI, load test) are not yet complete.
+- **Phase 2 complete** — all hardening and scaling steps are implemented. Tier 3 production hardening (real payment gateway, Vault secrets, distributed tracing) is out of scope; see `docs/tier3-followup.md`.
 
 ---
 
