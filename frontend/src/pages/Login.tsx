@@ -52,7 +52,7 @@ export function Login() {
     setLoading(true);
     try {
       const data = await apiLogin(emailVal, passwordVal);
-      login(data.access_token, data.user);
+      login(data.user);
       navigate(data.user.role === 'admin' ? '/admin' : '/dashboard', { replace: true });
     } catch (err: unknown) {
       const apiErr = err as { response?: { data?: { message?: string } } };

@@ -52,7 +52,7 @@ export function Signup() {
     setLoading(true);
     try {
       const data = await apiSignup(emailVal, passwordVal);
-      login(data.access_token, data.user);
+      login(data.user);
       navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
       const apiErr = err as { response?: { data?: { message?: string } } };
