@@ -514,16 +514,6 @@ Deleting a package sets `active = false` rather than removing the row. Historica
 
 ---
 
-## Known Limitations (by design)
-
-- **No real payments** — purchases accept any request and process credits directly.
-- **No email verification or password reset** — out of scope for a portfolio prototype.
-- **Google/OAuth buttons are non-functional UI placeholders** — no OAuth flow is wired.
-- **Mock AI features** — the four gated features return simulated output, not real AI calls.
-- **Phase 2 complete** — all hardening and scaling steps are implemented. Tier 3 production hardening (real payment gateway, Vault secrets, distributed tracing) is out of scope; see `docs/tier3-followup.md`.
-
----
-
 ## Troubleshooting
 
 **Port 3000 already in use**  
